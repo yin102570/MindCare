@@ -1,26 +1,50 @@
+# ============================================================
+# MindCare .gitignore
+# ============================================================
+
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 dist/
 build/
-.env
-*.log
+.eggs/
+*.egg
+.venv/
+venv/
+env/
 
-# Node
+# Node.js
 node_modules/
-npm-debug.log*
 package-lock.json
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
-*.sublime-workspace
+*.swp
+*.swo
+*~
 desktop.ini
-
-# OS
 Thumbs.db
 .DS_Store
 
-# Playwright
-.playwright-cli/
+# Temporary files
+_report_text.txt
+*.tmp
+
+# Environment & Secrets
+.env
+.env.local
+*.secret
+
+# Logs
+*.log
+
+# PDF/Word report files (large binaries, optional to exclude)
+# Remove the comments below if you want to include them in the repo:
+# 工程作业报告.pdf
+# 工程作业报告.docx
+
+# CodeBuddy
+.codebuddy/

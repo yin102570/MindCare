@@ -290,8 +290,25 @@ def submit_assessment():
     scale_id = body.get('scale_id')
     answers  = body.get('answers', [])  # [{question_id, selected_score}, ...]
 
-    # 计算总分
-    total_score = sum(int(a.get('selected_score', 0)) for a in answers)
+    # 防御：校验每道题的分值在 0-3 范围内，过滤非法值
+    validated_answers = []
+    for a in answers:
+        score = int(a.get('selected_score', 0))
+        # 强制截断为 0-3 范围，杜绝负数或超范围的脏数据
+        if score < 0:
+            score = 0
+        elif score > 3:
+            score = 3
+        validated_answers.append({
+            'question_id': a['question_id'],
+            'selected_score': score
+        })
+    answers = validated_answers
+
+    # 计算总分（保底不低于0）
+    total_score = sum(a['selected_score'] for a in answers)
+    if total_score < 0:
+        total_score = 0
 
     # 根据量表类型判断等级
     db = get_db()
@@ -303,8 +320,8 @@ def submit_assessment():
         scale_type = scale.get('type', '')
         # PHQ-9: 0-4正常 5-9轻度 10-19中度 20-27重度
         # GAD-7: 0-4正常 5-9轻度 10-14中度 15-21重度
-        # PSS-10: 0-12正常 13-26中等 27-40高压力
-        # PSQI: 0-5正常 6-10睡眠障碍 11-15重度睡眠障碍
+        # PSS-10: 0-13正常 14-26中度 27-40重度
+        # PSQI: 0-5正常 6-10中度 11-21重度
         if scale_type == 'depression':
             # PHQ-9 抑郁量表
             if total_score >= 20:
@@ -326,13 +343,11 @@ def submit_assessment():
             else:
                 level = 'normal'
         elif scale_type == 'stress':
-            # PSS-10 压力知觉量表
+            # PSS-10 压力知觉量表：0-13正常 14-26中等 27-40高压力
             if total_score >= 27:
                 level = 'severe'
-            elif total_score >= 13:
+            elif total_score >= 14:
                 level = 'moderate'
-            elif total_score >= 0:
-                level = 'mild'  # 0分以上就是有压力
             else:
                 level = 'normal'
         else:
@@ -342,8 +357,6 @@ def submit_assessment():
                 level = 'severe'
             elif total_score >= 6:
                 level = 'moderate'
-            elif total_score >= 0:
-                level = 'mild'
             else:
                 level = 'normal'
 
@@ -410,7 +423,12 @@ def dept_stats():
         with db.cursor() as cur:
             # 使用视图查询
             cur.execute("SELECT * FROM v_dept_mental_stats ORDER BY risk_rate_pct DESC")
-            return success(cur.fetchall())
+            rows = cur.fetchall()
+        # 为每条记录补充前端需要的字段
+        for row in rows:
+            row['total_users'] = row.get('total_students', 0)
+            row['high_risk_count'] = (row.get('severe_count', 0) or 0) + (row.get('moderate_count', 0) or 0)
+        return success(rows)
     finally:
         db.close()
 
@@ -479,6 +497,59 @@ def delete_user(uid):
     except Exception as e:
         db.rollback()
         return error(f'删除失败（事务回滚）: {str(e)}')
+    finally:
+        db.close()
+
+@app.route('/api/admin/users', methods=['POST'])
+def add_user():
+    """管理员添加新用户"""
+    body = request.json
+    student_id = body.get('student_id', '').strip()
+    name = body.get('name', '').strip()
+    password = body.get('password', '').strip()
+    gender = body.get('gender', '男')
+    department = body.get('department', '')
+    grade = body.get('grade', '')
+    phone = body.get('phone', '')
+    email = body.get('email', '').strip()
+
+    # 必填字段校验
+    if not student_id or not name or not password:
+        return error('学号/工号、姓名、密码为必填项')
+    if len(password) < 6:
+        return error('密码长度不能少于6位')
+
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            # 检查学号是否已存在
+            cur.execute("SELECT user_id FROM users WHERE student_id=%s", (student_id,))
+            if cur.fetchone():
+                return error(f'学号/工号 {student_id} 已存在')
+            # 检查邮箱是否已存在
+            if email:
+                cur.execute("SELECT user_id FROM users WHERE email=%s", (email,))
+                if cur.fetchone():
+                    return error(f'邮箱 {email} 已存在')
+
+            # 插入新用户
+            password_hash = hash_password(password)
+            cur.execute(
+                """INSERT INTO users (student_id, name, password_hash, gender, department, grade, phone, email, status, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'active',NOW())""",
+                (student_id, name, password_hash, gender, department, grade, phone, email)
+            )
+            user_id = cur.lastrowid
+            db.commit()
+
+        with db.cursor() as cur:
+            cur.execute("SELECT user_id,student_id,name,gender,department,grade,phone,email,status,created_at FROM users WHERE user_id=%s", (user_id,))
+            user = cur.fetchone()
+
+        return success({'user': user, 'msg': f'用户 {name} 添加成功'})
+    except Exception as e:
+        db.rollback()
+        return error(f'添加失败: {str(e)}')
     finally:
         db.close()
 
@@ -622,18 +693,55 @@ def calc_risk():
 @app.route('/api/demo/trigger-test', methods=['POST'])
 def demo_trigger_test():
     """演示触发器操作：提交评估 → 触发器自动干预"""
-    uid, _ = get_current_user()
+    body = request.json
+    # 优先使用前端传入的 user_id，否则使用当前登录用户
+    uid = body.get('user_id')
+    if not uid:
+        uid, _ = get_current_user()
     if not uid:
         return error('未登录', 401)
 
-    body = request.json
     scale_id = body.get('scale_id', 1)
     total_score = body.get('total_score', 15)
-    level = body.get('level', 'moderate')
-    note = body.get('note', '工程作业演示：触发器自动干预测试')
+    # 防御：拒绝负数分数
+    if total_score < 0:
+        total_score = 0
 
     db = get_db()
     try:
+        # 先查询量表信息，用来推导正确的 level 和截断超限分数
+        with db.cursor() as cur:
+            cur.execute("SELECT type, max_score FROM scales WHERE scale_id=%s", (scale_id,))
+            scale_info = cur.fetchone()
+
+        scale_type = scale_info['type'] if scale_info else 'depression'
+        max_score  = scale_info['max_score'] if scale_info else 27
+        # 截断超限分数
+        if total_score > max_score:
+            total_score = max_score
+
+        # 根据量表类型和分数自动推导等级（与submit_assessment保持一致）
+        if scale_type == 'depression':
+            if total_score >= 20: level = 'severe'
+            elif total_score >= 10: level = 'moderate'
+            elif total_score >= 5: level = 'mild'
+            else: level = 'normal'
+        elif scale_type == 'anxiety':
+            if total_score >= 15: level = 'severe'
+            elif total_score >= 10: level = 'moderate'
+            elif total_score >= 5: level = 'mild'
+            else: level = 'normal'
+        elif scale_type == 'stress':
+            if total_score >= 27: level = 'severe'
+            elif total_score >= 14: level = 'moderate'
+            else: level = 'normal'
+        else:  # sleep
+            if total_score >= 11: level = 'severe'
+            elif total_score >= 6: level = 'moderate'
+            else: level = 'normal'
+
+        note = body.get('note', '工程作业演示：触发器自动干预测试')
+
         with db.cursor() as cur:
             cur.execute(
                 "INSERT INTO assessments (user_id, scale_id, total_score, level, note) VALUES (%s,%s,%s,%s,%s)",
@@ -667,107 +775,31 @@ def demo_trigger_test():
 
 @app.route('/api/demo/trigger-violation', methods=['POST'])
 def demo_trigger_violation():
-    """演示约束/触发器校验：输入值通过则写入数据库，不通过则被拦截"""
+    """演示违背触发器/约束：插入非法数据 → 数据库报错"""
     body = request.json
     test_type = body.get('test_type', '')
 
     db = get_db()
     try:
         if test_type == 'invalid_level':
-            custom_level = body.get('custom_level', 'critical')
+            # 违背：插入非法 level 值
             with db.cursor() as cur:
                 cur.execute(
                     "INSERT INTO assessments (user_id, scale_id, total_score, level) VALUES (%s,%s,%s,%s)",
-                    (1, 1, 10, custom_level)
+                    (1, 1, 10, 'critical')
                 )
-                assess_id = cur.lastrowid
                 db.commit()
-            # 写入成功 → 回查实际数据及触发器副作用
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM assessments WHERE assess_id=%s", (assess_id,))
-                inserted = cur.fetchone()
-                cur.execute("SELECT * FROM interventions WHERE assess_id=%s", (assess_id,))
-                intervention = cur.fetchone()
-                cur.execute("SELECT * FROM risk_levels WHERE user_id=1")
-                risk = cur.fetchone()
-            return success({
-                'status': 'passed',
-                'assess_id': assess_id,
-                'inserted': inserted,
-                'intervention_triggered': intervention,
-                'risk_updated': risk,
-                'message': f'level="{custom_level}" 通过了 CHECK 约束，数据已写入 assessments 表！打开 Navicat 按 Ctrl+R 即可看到。'
-            })
+            return success(msg='不应执行到这里')
 
         elif test_type == 'invalid_user':
-            custom_user_id = int(body.get('custom_user_id', 9999))
+            # 违背：插入不存在的 user_id
             with db.cursor() as cur:
                 cur.execute(
                     "INSERT INTO assessments (user_id, scale_id, total_score, level) VALUES (%s,%s,%s,%s)",
-                    (custom_user_id, 1, 10, 'moderate')
-                )
-                assess_id = cur.lastrowid
-                db.commit()
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM assessments WHERE assess_id=%s", (assess_id,))
-                inserted = cur.fetchone()
-                cur.execute("SELECT u.name FROM users WHERE user_id=%s", (custom_user_id,))
-                user_row = cur.fetchone()
-                cur.execute("SELECT * FROM interventions WHERE assess_id=%s", (assess_id,))
-                intervention = cur.fetchone()
-                cur.execute("SELECT * FROM risk_levels WHERE user_id=%s", (custom_user_id,))
-                risk = cur.fetchone()
-            user_name = list(user_row.values())[0] if user_row else f'ID={custom_user_id}'
-            return success({
-                'status': 'passed',
-                'assess_id': assess_id,
-                'inserted': inserted,
-                'intervention_triggered': intervention,
-                'risk_updated': risk,
-                'message': f'user_id={custom_user_id}（{user_name}）存在，外键约束通过，数据已写入！Navicat 按 Ctrl+R 可见。'
-            })
-
-        elif test_type == 'negative_score':
-            custom_score = int(body.get('custom_score', -5))
-            with db.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO assessments (user_id, scale_id, total_score, level) VALUES (%s,%s,%s,%s)",
-                    (1, 1, custom_score, 'normal')
-                )
-                assess_id = cur.lastrowid
-                db.commit()
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM assessments WHERE assess_id=%s", (assess_id,))
-                inserted = cur.fetchone()
-                cur.execute("SELECT * FROM interventions WHERE assess_id=%s", (assess_id,))
-                intervention = cur.fetchone()
-                cur.execute("SELECT * FROM risk_levels WHERE user_id=1")
-                risk = cur.fetchone()
-            return success({
-                'status': 'passed',
-                'assess_id': assess_id,
-                'inserted': inserted,
-                'intervention_triggered': intervention,
-                'risk_updated': risk,
-                'message': f'分数={custom_score} 通过了 CHECK 约束，数据已写入！Navicat 按 Ctrl+R 可见。'
-            })
-
-        elif test_type == 'invalid_answer_score':
-            custom_answer_score = int(body.get('custom_answer_score', 5))
-            with db.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO answers (assess_id, question_id, selected_score) VALUES (%s,%s,%s)",
-                    (1, 1, custom_answer_score)
+                    (9999, 1, 10, 'moderate')
                 )
                 db.commit()
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM answers WHERE assess_id=1 ORDER BY answer_id DESC LIMIT 1")
-                inserted = cur.fetchone()
-            return success({
-                'status': 'passed',
-                'inserted': inserted,
-                'message': f'答案分值={custom_answer_score} 通过了约束校验，数据已写入 answers 表！Navicat 按 Ctrl+R 可见。'
-            })
+            return success(msg='不应执行到这里')
 
         else:
             return error('请选择测试类型')
@@ -835,80 +867,50 @@ def demo_procedure_test():
 
 @app.route('/api/demo/procedure-violation', methods=['POST'])
 def demo_procedure_violation():
-    """演示存储过程参数校验：输入值通过则执行成功，不通过则返回错误"""
+    """演示存储过程违背约束：传入非法参数 → 存储过程返回错误"""
     body = request.json
     test_type = body.get('test_type', '')
 
     db = get_db()
     try:
         if test_type == 'user_not_found':
-            custom_user_id = int(body.get('custom_user_id', 9999))
+            # 违背：传入不存在的用户ID
             with db.cursor() as cur:
                 cur.execute("SET @p_result = ''")
-                cur.execute("CALL sp_calc_risk_score_v2(%s, @p_result)", (custom_user_id,))
+                cur.execute("CALL sp_calc_risk_score_v2(9999, @p_result)")
                 cur.execute("SELECT @p_result as result_out")
                 result = cur.fetchone()
                 db.commit()
             result_str = list(result.values())[0] if result else ''
             if 'ERROR' in str(result_str).upper():
                 return error(f'存储过程参数校验生效: {result_str}')
-            # 用户存在 → 回查 risk_levels 变化
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM risk_levels WHERE user_id=%s", (custom_user_id,))
-                risk = cur.fetchone()
-                cur.execute("SELECT name FROM users WHERE user_id=%s", (custom_user_id,))
-                user_row = cur.fetchone()
-            user_name = list(user_row.values())[0] if user_row else f'ID={custom_user_id}'
-            return success({
-                'status': 'passed',
-                'risk_levels': risk,
-                'procedure_result': result_str,
-                'message': f'user_id={custom_user_id}（{user_name}）存在，存储过程执行成功！风险等级已更新。Navicat 按 Ctrl+R 查看 risk_levels 表。'
-            })
+            return success({'result': result_str})
 
         elif test_type == 'invalid_status':
-            custom_status = body.get('custom_status', 'deleted')
+            # 违背：传入非法状态值
             with db.cursor() as cur:
                 cur.execute("SET @p_result = ''")
-                cur.execute("CALL sp_update_intervention(1, %s, '测试自定状态', @p_result)", (custom_status,))
+                cur.execute("CALL sp_update_intervention(1, 'deleted', '测试非法状态', @p_result)")
                 cur.execute("SELECT @p_result as result_out")
                 result = cur.fetchone()
                 db.commit()
             result_str = list(result.values())[0] if result else ''
             if 'ERROR' in str(result_str).upper():
                 return error(f'存储过程参数校验生效: {result_str}')
-            # 状态合法 → 回查干预任务变化
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM interventions WHERE intervention_id=1")
-                intervention = cur.fetchone()
-            return success({
-                'status': 'passed',
-                'intervention': intervention,
-                'procedure_result': result_str,
-                'message': f'status="{custom_status}" 合法，存储过程执行成功！干预任务 #1 已更新。Navicat 按 Ctrl+R 查看 interventions 表。'
-            })
+            return success({'result': result_str})
 
         elif test_type == 'intervention_not_found':
-            custom_intervention_id = int(body.get('custom_intervention_id', 99999))
+            # 违背：更新不存在的干预任务
             with db.cursor() as cur:
                 cur.execute("SET @p_result = ''")
-                cur.execute("CALL sp_update_intervention(%s, 'completed', '测试自定ID', @p_result)", (custom_intervention_id,))
+                cur.execute("CALL sp_update_intervention(99999, 'completed', '测试', @p_result)")
                 cur.execute("SELECT @p_result as result_out")
                 result = cur.fetchone()
                 db.commit()
             result_str = list(result.values())[0] if result else ''
             if 'ERROR' in str(result_str).upper():
                 return error(f'存储过程参数校验生效: {result_str}')
-            # 干预任务存在 → 回查变化
-            with db.cursor() as cur:
-                cur.execute("SELECT * FROM interventions WHERE intervention_id=%s", (custom_intervention_id,))
-                intervention = cur.fetchone()
-            return success({
-                'status': 'passed',
-                'intervention': intervention,
-                'procedure_result': result_str,
-                'message': f'干预任务 #{custom_intervention_id} 存在，存储过程执行成功！状态已更新为 completed。Navicat 按 Ctrl+R 查看。'
-            })
+            return success({'result': result_str})
 
         else:
             return error('请选择测试类型')

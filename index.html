@@ -112,6 +112,10 @@ body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg)
 .user-role{font-size:12px;color:var(--text3)}
 .btn-logout{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:4px;transition:.15s}
 .btn-logout:hover{color:var(--rose)}
+.btn-switch-view{background:linear-gradient(135deg,var(--teal),var(--accent));border:none;color:#fff;cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:16px;transition:.2s;white-space:nowrap;letter-spacing:.03em}
+.btn-switch-view:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,212,170,.4)}
+.btn-switch-view.admin{background:linear-gradient(135deg,var(--accent),var(--rose))}
+.btn-switch-view.admin:hover{box-shadow:0 4px 12px rgba(108,99,255,.4)}
 
 .main-content{margin-left:240px;flex:1;min-height:100vh;padding:28px 32px}
 .page{display:none;animation:slide-up .4s ease}
@@ -357,11 +361,11 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
     </div>
     <div class="form-group">
       <label>学号 / 邮箱</label>
-      <input type="text" id="login-username" placeholder="请输入学号或邮箱" value="admin">
+      <input type="text" id="login-username" placeholder="请输入学号或邮箱" value="2021001001">
     </div>
     <div class="form-group">
       <label>密码</label>
-      <input type="password" id="login-password" placeholder="请输入密码" value="admin123">
+      <input type="password" id="login-password" placeholder="请输入密码" value="123456">
     </div>
     <button class="btn-login" onclick="doLogin()">登 录</button>
     <div class="login-err" id="login-err"></div>
@@ -384,6 +388,7 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
         <div class="user-name" id="user-name">用户</div>
         <div class="user-role" id="user-role">学生</div>
       </div>
+      <button class="btn-switch-view" id="btn-switch-view" onclick="toggleView()" title="切换视角"></button>
       <button class="btn-logout" onclick="doLogout()" title="退出">X</button>
     </div>
   </aside>
@@ -435,9 +440,12 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
 
     <!-- 用户管理（管理员） -->
     <div class="page" id="page-users">
-      <div class="page-header">
-        <h2>用户管理</h2>
-        <p>查看所有学生信息及风险等级，支持事务级联删除</p>
+      <div class="page-header" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+        <div style="flex:1">
+          <h2>用户管理</h2>
+          <p>查看所有学生信息及风险等级，支持事务级联删除</p>
+        </div>
+        <button class="btn btn-primary" onclick="openAddUserModal()">+ 添加用户</button>
       </div>
       <div class="card">
         <div class="table-wrap" id="users-table">
@@ -499,6 +507,7 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
         <div class="grid3" id="stats-detail"></div>
       </div>
       <button class="export-btn" onclick="exportData()">导出报表</button>
+      <button class="export-btn" onclick="loadStats();toast('数据已刷新','success')" style="margin-left:12px;background:var(--card2)">刷新数据</button>
     </div>
 
     <!-- 我的档案（学生） -->
@@ -577,14 +586,9 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
             <p style="color:var(--text2);font-size:13px;margin-bottom:16px">
               尝试删除不存在的用户（user_id=9999），验证事务回滚机制
             </p>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-              <button class="btn btn-amber btn-sm" onclick="demoDeleteViolation()">默认回滚 (9999)</button>
-              <button class="btn btn-secondary btn-sm" onclick="demoRestoreUsers()">恢复测试数据</button>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;margin-top:10px">
-              <span style="font-size:12px;color:var(--text2);white-space:nowrap">自定义ID：</span>
-              <input type="number" id="demo-delete-custom-id" class="filter" style="width:100px;padding:6px;font-size:12px" placeholder="用户ID" value="9999">
-              <button class="btn btn-amber btn-sm" onclick="demoDeleteCustom()">自定义回滚测试</button>
+            <div style="display:flex;gap:10px">
+              <button class="btn btn-amber" onclick="demoDeleteViolation()">测试回滚</button>
+              <button class="btn btn-secondary" onclick="demoRestoreUsers()">恢复测试数据</button>
             </div>
             <div id="demo-delete-violation-result" style="margin-top:12px;font-size:13px;color:var(--text2)"></div>
           </div>
@@ -613,6 +617,9 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
               向 assessments 表插入记录后，数据库触发器自动：1.生成干预任务 2.更新风险等级
             </p>
             <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+              <select id="demo-trigger-user" class="filter" style="padding:8px;min-width:140px">
+                <option value="">选择用户...</option>
+              </select>
               <select id="demo-trigger-level" class="filter" style="padding:8px">
                 <option value="moderate">中度 (moderate)</option>
                 <option value="severe">重度 (severe)</option>
@@ -625,33 +632,11 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
             <div id="demo-trigger-result" style="margin-top:16px;font-size:13px"></div>
           </div>
           <div class="card">
-            <div class="card-title">[失败] 违背约束演示（4种）</div>
+            <div class="card-title">[失败] 违背约束演示</div>
             <p style="color:var(--text2);font-size:13px;margin-bottom:12px">测试数据库约束/触发器是否正确拦截非法数据</p>
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_level')" style="flex-shrink:0">默认level</button>
-                <span style="font-size:11px;color:var(--text3)">自定义level：</span>
-                <input type="text" id="demo-trigger-custom-level" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="critical" value="critical">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerCustom('invalid_level')">测试</button>
-              </div>
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_user')" style="flex-shrink:0">默认user_id</button>
-                <span style="font-size:11px;color:var(--text3)">自定义ID：</span>
-                <input type="number" id="demo-trigger-custom-user" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="9999" value="9999">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerCustom('invalid_user')">测试</button>
-              </div>
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('negative_score')" style="flex-shrink:0">默认负数</button>
-                <span style="font-size:11px;color:var(--text3)">自定义分数：</span>
-                <input type="number" id="demo-trigger-custom-score" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="-5" value="-5">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerCustom('negative_score')">测试</button>
-              </div>
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_answer_score')" style="flex-shrink:0">默认越界</button>
-                <span style="font-size:11px;color:var(--text3)">自定义分值：</span>
-                <input type="number" id="demo-trigger-custom-answer" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="5" value="5">
-                <button class="btn btn-amber btn-sm" onclick="demoTriggerCustom('invalid_answer_score')">测试</button>
-              </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_level')">非法 level 值 ('critical')</button>
+              <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_user')">不存在 user_id (9999)</button>
             </div>
             <div id="demo-trigger-violation-result" style="margin-top:12px;font-size:13px;color:var(--text2)"></div>
           </div>
@@ -675,27 +660,12 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
             <div id="demo-proc-result" style="font-size:13px"></div>
           </div>
           <div class="card">
-            <div class="card-title">[失败] 违背约束演示（3种）</div>
+            <div class="card-title">[失败] 违背约束演示</div>
             <p style="color:var(--text2);font-size:13px;margin-bottom:12px">测试存储过程参数校验是否正确拦截</p>
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoProcViolation('user_not_found')" style="flex-shrink:0">默认user_id</button>
-                <span style="font-size:11px;color:var(--text3)">自定义ID：</span>
-                <input type="number" id="demo-proc-custom-user" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="9999" value="9999">
-                <button class="btn btn-amber btn-sm" onclick="demoProcCustom('user_not_found')">测试</button>
-              </div>
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoProcViolation('invalid_status')" style="flex-shrink:0">默认状态</button>
-                <span style="font-size:11px;color:var(--text3)">自定义状态：</span>
-                <input type="text" id="demo-proc-custom-status" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="deleted" value="deleted">
-                <button class="btn btn-amber btn-sm" onclick="demoProcCustom('invalid_status')">测试</button>
-              </div>
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="btn btn-amber btn-sm" onclick="demoProcViolation('intervention_not_found')" style="flex-shrink:0">默认干预ID</button>
-                <span style="font-size:11px;color:var(--text3)">自定义干预ID：</span>
-                <input type="number" id="demo-proc-custom-interv" class="filter" style="width:80px;padding:5px;font-size:11px" placeholder="99999" value="99999">
-                <button class="btn btn-amber btn-sm" onclick="demoProcCustom('intervention_not_found')">测试</button>
-              </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn btn-amber btn-sm" onclick="demoProcViolation('user_not_found')">不存在用户 (user_id=9999)</button>
+              <button class="btn btn-amber btn-sm" onclick="demoProcViolation('invalid_status')">非法状态值 ('deleted')</button>
+              <button class="btn btn-amber btn-sm" onclick="demoProcViolation('intervention_not_found')">不存在干预任务 (id=99999)</button>
             </div>
             <div id="demo-proc-violation-result" style="margin-top:12px;font-size:13px;color:var(--text2)"></div>
           </div>
@@ -752,6 +722,49 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
   </div>
 </div>
 
+<!-- MODAL：添加用户 -->
+<div class="modal-overlay" id="modal-add-user">
+  <div class="modal">
+    <h3>+ 添加新用户</h3>
+    <div class="form-row">
+      <label>学号/工号 <span style="color:var(--crisis)">*</span></label>
+      <input type="text" id="add-student-id" placeholder="请输入学号或工号">
+    </div>
+    <div class="form-row">
+      <label>姓名 <span style="color:var(--crisis)">*</span></label>
+      <input type="text" id="add-name" placeholder="请输入姓名">
+    </div>
+    <div class="form-row">
+      <label>登录密码 <span style="color:var(--crisis)">*</span></label>
+      <input type="password" id="add-password" placeholder="至少6位密码">
+    </div>
+    <div class="form-row" style="display:flex;gap:12px">
+      <div style="flex:1"><label>性别</label>
+        <select id="add-gender"><option>男</option><option>女</option></select>
+      </div>
+      <div style="flex:1"><label>院系</label>
+        <input type="text" id="add-department" placeholder="如：计算机学院">
+      </div>
+    </div>
+    <div class="form-row" style="display:flex;gap:12px">
+      <div style="flex:1"><label>年级</label>
+        <input type="text" id="add-grade" placeholder="如：2024级">
+      </div>
+      <div style="flex:1"><label>手机号</label>
+        <input type="text" id="add-phone" placeholder="选填">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>邮箱</label>
+      <input type="email" id="add-email" placeholder="选填">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeAddUserModal()" style="background:var(--card2);color:var(--text2)">取消</button>
+      <button class="btn btn-primary" onclick="submitAddUser()">确认添加</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL：干预任务处理 -->
 <div class="modal-overlay" id="modal-intervention">
   <div class="modal">
@@ -800,6 +813,7 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
 const API = 'http://localhost:5000/api';
 let currentUser = null;
 let isAdmin = false;
+let viewAsAdmin = true;  // 当前展示的视角（可切换）
 let authToken = localStorage.getItem('mindcare_token') || '';
 let currentInterventionId = null;
 let currentDeleteUser = null;
@@ -926,9 +940,9 @@ function initApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
+  viewAsAdmin = isAdmin;
   document.getElementById('user-name').textContent = currentUser.name;
-  document.getElementById('user-role').textContent = isAdmin ? '心理咨询中心' : currentUser.department;
-  document.getElementById('user-avatar').textContent = currentUser.name[0];
+  updateRoleDisplay();
 
   buildNav();
   showPage('dashboard');
@@ -950,7 +964,7 @@ function buildNav() {
     {icon:'[R]', label:'测评记录', page:'history'},
     {icon:'[P]', label:'我的档案', page:'profile'},
   ];
-  const items = isAdmin ? adminNav : studentNav;
+  const items = viewAsAdmin ? adminNav : studentNav;
   let html = '';
   items.forEach(item => {
     if(item.section) html += `<div class="nav-section">${item.section}</div>`;
@@ -958,6 +972,34 @@ function buildNav() {
       + `<span class="nav-icon">${item.icon}</span><span>${item.label}</span></div>`;
   });
   document.getElementById('sidebar-nav').innerHTML = html;
+  updateSwitchBtn();
+}
+
+function updateRoleDisplay() {
+  document.getElementById('user-name').textContent = currentUser.name;
+  document.getElementById('user-avatar').textContent = currentUser.name[0];
+  document.getElementById('user-role').textContent = viewAsAdmin ? '管理员' : (currentUser.department || '学生');
+}
+
+function updateSwitchBtn() {
+  const btn = document.getElementById('btn-switch-view');
+  if (!btn) return;
+  if (viewAsAdmin) {
+    btn.textContent = '切换到学生端';
+    btn.className = 'btn-switch-view admin';
+  } else {
+    btn.textContent = '切换到管理端';
+    btn.className = 'btn-switch-view';
+  }
+}
+
+function toggleView() {
+  viewAsAdmin = !viewAsAdmin;
+  updateRoleDisplay();
+  buildNav();
+  showPage('dashboard');
+  loadDashboard();
+  toast(viewAsAdmin ? '已切换到管理端视角' : '已切换到学生端视角', 'info');
 }
 
 function showPage(name) {
@@ -1237,10 +1279,61 @@ async function confirmDelete() {
     toast('事务删除成功！已级联删除所有关联数据');
     closeDeleteModal();
     loadUsers();
+    // 同步刷新仪表盘和统计数据
+    if(isAdmin) { loadDashboard(); loadStats(); }
   } else {
     // 失败时显示错误
     document.getElementById('icon-users').textContent = 'X';
     document.getElementById('icon-users').className = 'dp-icon error';
+    toast(r.msg, 'error');
+  }
+}
+
+// 添加用户 - 打开弹窗
+function openAddUserModal() {
+  ['add-student-id','add-name','add-password','add-department','add-grade','add-phone','add-email'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('modal-add-user').classList.add('show');
+}
+
+// 添加用户 - 关闭弹窗
+function closeAddUserModal() {
+  document.getElementById('modal-add-user').classList.remove('show');
+}
+
+// 添加用户 - 提交表单
+async function submitAddUser() {
+  const student_id = document.getElementById('add-student-id').value.trim();
+  const name = document.getElementById('add-name').value.trim();
+  const password = document.getElementById('add-password').value.trim();
+  const gender = document.getElementById('add-gender').value;
+  const department = document.getElementById('add-department').value.trim();
+  const grade = document.getElementById('add-grade').value.trim();
+  const phone = document.getElementById('add-phone').value.trim();
+  const email = document.getElementById('add-email').value.trim();
+
+  if (!student_id || !name || !password) {
+    toast('学号/工号、姓名、密码为必填项', 'warn');
+    return;
+  }
+  if (password.length < 6) {
+    toast('密码长度不能少于6位', 'warn');
+    return;
+  }
+
+  const r = await api('/admin/users', {
+    method: 'POST',
+    body: { student_id, name, password, gender, department, grade, phone, email }
+  });
+
+  if (r.code === 0) {
+    toast(r.data.msg || '用户添加成功', 'success');
+    closeAddUserModal();
+    loadUsers();
+    // 同步刷新仪表盘和统计数据
+    if (isAdmin) { loadDashboard(); loadStats(); }
+  } else {
     toast(r.msg, 'error');
   }
 }
@@ -1501,15 +1594,24 @@ let currentAnswers = {};
 async function loadAssess() {
   const r = await api('/scales');
   if(r.code !== 0) return;
-  const cards = r.data.map(s => `
+  const typeMap = {
+    depression: {label:'抑郁测评', color:'accent', bg:'PHQ'},
+    anxiety:    {label:'焦虑测评', color:'amber',  bg:'GAD'},
+    stress:     {label:'压力测评', color:'rose',   bg:'PSS'},
+    sleep:      {label:'睡眠测评', color:'teal',   bg:'PSQI'},
+    comprehensive:{label:'综合测评', color:'blue', bg:'COMP'}
+  };
+  const cards = r.data.map(s => {
+    const t = typeMap[s.type] || {label:s.type, color:'teal', bg:s.type.toUpperCase()};
+    return `
     <div class="scale-card" onclick="startAssess(${s.scale_id}, '${s.name}', '${s.type}')">
-      <div class="sc-type" style="color:var(--${s.type==='depression'?'accent':s.type==='anxiety'?'amber':'teal'})">${s.type==='depression'?'抑郁测评':s.type==='anxiety'?'焦虑测评':'睡眠测评'}</div>
+      <div class="sc-type" style="color:var(--${t.color})">${t.label}</div>
       <div class="sc-name">${s.name}</div>
       <div class="sc-desc">${s.description}</div>
       <div class="sc-meta"><span>${s.estimated_time}分钟</span><span>${s.question_count}题</span></div>
-      <div class="sc-bg">${s.type==='depression'?'PHQ':s.type==='anxiety'?'GAD':'PSQI'}</div>
+      <div class="sc-bg">${t.bg}</div>
     </div>
-  `).join('');
+  `}).join('');
   document.getElementById('assess-content').innerHTML = `<div class="scale-grid">${cards}</div>`;
 }
 
@@ -1641,6 +1743,8 @@ async function submitAssess() {
     
     document.getElementById('assess-content').innerHTML = html;
     toast('测评提交成功！');
+    // 管理员后台同步刷新统计数据
+    if(isAdmin) { loadDashboard(); loadStats(); }
   } else {
     // 后端返回错误时给出提示
     if (r.code === 401) {
@@ -1670,8 +1774,8 @@ async function loadHistory() {
   const rows = r.data.map(a => `
     <tr>
       <td>${a.scale_name}</td>
-      <td>${levelBadge(a.risk_level)}</td>
-      <td><strong style="color:${a.total_score>=15?'var(--crisis)':a.total_score>=10?'var(--warning)':'var(--safe)'}">${a.total_score}</strong></td>
+      <td>${levelBadge(a.level)}</td>
+      <td><strong style="color:${a.level==='severe'?'var(--crisis)':a.level==='moderate'?'var(--warning)':'var(--safe)'}">${a.total_score}</strong></td>
       <td>${a.assessment_date}</td>
       <td>${a.intervention_triggered ? '<span class="badge badge-urgent">已触发干预</span>' : '--'}</td>
     </tr>
@@ -1746,6 +1850,7 @@ async function loadDemo() {
     const opts = r.data.map(u => `<option value="${u.user_id}">${u.name} (${u.student_id}) - ${u.department}</option>`).join('');
     document.getElementById('demo-delete-user').innerHTML = '<option value="">选择要删除的用户...</option>' + opts;
     document.getElementById('demo-proc-user').innerHTML = '<option value="">选择用户...</option>' + opts;
+    document.getElementById('demo-trigger-user').innerHTML = '<option value="">选择用户...</option>' + opts;
   }
 }
 
@@ -1872,45 +1977,16 @@ async function demoRestoreUsers() {
   }
 }
 
-// ---- 事务删除：自定义ID回滚测试 ----
-async function demoDeleteCustom() {
-  const box = document.getElementById('demo-delete-violation-result');
-  const customId = document.getElementById('demo-delete-custom-id').value || '9999';
-  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">尝试删除用户 (user_id=${customId})...</p></div>`;
-
-  const r = await api(`/admin/users/${customId}`, {method:'DELETE'});
-  if(r.code !== 0) {
-    box.innerHTML = `
-      <div class="demo-result-box error">
-        <div class="result-title">[OK] 事务回滚生效！(ID: ${customId})</div>
-        <p>${r.msg}</p>
-        <p style="color:var(--text3);font-size:12px;margin-top:8px">
-          后端检测到用户不存在，事务自动回滚，未删除任何数据。<br>
-          验证了事务的原子性和错误处理机制。
-        </p>
-      </div>`;
-    toast('事务回滚验证成功', 'info');
-  } else {
-    box.innerHTML = `
-      <div class="demo-result-box success">
-        <div class="result-title">[!] 用户 #${customId} 被删除了！</div>
-        <p>${r.msg}</p>
-        <p style="color:var(--amber);font-size:12px;margin-top:8px">
-          该用户存在且已删除。点「恢复测试数据」可还原。
-        </p>
-      </div>`;
-    loadDemo();
-  }
-}
-
 // ---- 2. 触发器添加 ----
 async function demoTriggerNormal() {
+  const uid = document.getElementById('demo-trigger-user').value;
+  if(!uid) { toast('请先选择用户', 'warn'); return; }
   const level = document.getElementById('demo-trigger-level').value;
   const score = parseInt(document.getElementById('demo-trigger-score').value) || 18;
   const box = document.getElementById('demo-trigger-result');
   box.innerHTML = '<div class="demo-result-box"><div class="result-title">提交评估中...</div><p style="color:var(--text2)">INSERT INTO assessments -> 触发器自动执行...</p></div>';
 
-  const r = await api('/demo/trigger-test', {method:'POST', body:{level, total_score:score, note:'数据库演示：触发器自动干预测试'}});
+  const r = await api('/demo/trigger-test', {method:'POST', body:{user_id:parseInt(uid), level, total_score:score, note:'数据库演示：触发器自动干预测试'}});
 
   if(r.code === 0) {
     const d = r.data;
@@ -1944,94 +2020,30 @@ async function demoTriggerViolation(testType) {
   const box = document.getElementById('demo-trigger-violation-result');
   const names = {
     invalid_level: '插入非法 level 值 ("critical")',
-    invalid_user: '插入不存在的 user_id (9999)',
-    negative_score: '插入负数分数 (-5)',
-    invalid_answer_score: '插入越界答题分值 (5分，超出0-3范围)'
+    invalid_user: '插入不存在的 user_id (9999)'
   };
   box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">${names[testType]}</p></div>`;
 
   const r = await api('/demo/trigger-violation', {method:'POST', body:{test_type: testType}});
 
   if(r.code !== 0) {
-    // 被约束/触发器拦截
     box.innerHTML = `
       <div class="demo-result-box error">
-        <div class="result-title">🚫 数据库约束/触发器生效！操作被拦截</div>
+        <div class="result-title">[OK] 数据库约束/触发器生效！操作被拦截</div>
         <p>${r.msg}</p>
         <p style="color:var(--text3);font-size:12px;margin-top:8px">
           测试：<code>${names[testType]}</code><br>
-          CHECK 约束 / 外键约束 / 触发器成功拦截 → 数据未入库。
+          数据库 CHECK 约束、外键约束或触发器成功拦截了非法数据，防止脏数据入库。
         </p>
       </div>`;
     toast('约束拦截成功', 'info');
   } else {
-    // 数据成功写入！显示实际插入内容
-    const d = r.data;
     box.innerHTML = `
       <div class="demo-result-box success">
-        <div class="result-title">✅ 数据写入成功！输入值通过了所有约束</div>
-        <p style="margin-top:6px">${d.message}</p>
-        ${d.inserted ? `<div style="margin-top:10px;background:var(--bg2);padding:10px;border-radius:6px;font-size:12px;max-height:200px;overflow-y:auto">
-          <strong>写入数据：</strong><pre style="margin:4px 0 0 0;white-space:pre-wrap">${JSON.stringify(d.inserted, null, 2)}</pre>
-        </div>` : ''}
-        ${d.intervention_triggered ? `<p style="color:var(--safe);font-size:12px;margin-top:4px">⚡ 触发器自动生成了 interventions 记录</p>` : ''}
-        ${d.risk_updated ? `<p style="color:var(--safe);font-size:12px">⚡ 触发器自动更新了 risk_levels 表</p>` : ''}
-        <p style="color:var(--text3);font-size:11px;margin-top:8px">➡️ 打开 Navicat → 对应表 → 按 <b>Ctrl+R</b> 刷新即可实时看到</p>
-      </div>`;
-    toast('数据写入成功', 'success');
-  }
-}
-
-// ---- 触发器失败：自定义参数测试 ----
-async function demoTriggerCustom(testType) {
-  const box = document.getElementById('demo-trigger-violation-result');
-  let customParams = {};
-  let desc = '';
-  if (testType === 'invalid_level') {
-    customParams.custom_level = document.getElementById('demo-trigger-custom-level').value || 'critical';
-    desc = `level="${customParams.custom_level}"`;
-  } else if (testType === 'invalid_user') {
-    customParams.custom_user_id = document.getElementById('demo-trigger-custom-user').value || '9999';
-    desc = `user_id=${customParams.custom_user_id}`;
-  } else if (testType === 'negative_score') {
-    customParams.custom_score = document.getElementById('demo-trigger-custom-score').value || '-5';
-    desc = `分数=${customParams.custom_score}`;
-  } else if (testType === 'invalid_answer_score') {
-    customParams.custom_answer_score = document.getElementById('demo-trigger-custom-answer').value || '5';
-    desc = `答案分值=${customParams.custom_answer_score}`;
-  }
-
-  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">${desc} — 自定义参数</p></div>`;
-
-  const r = await api('/demo/trigger-violation', {method:'POST', body:{test_type: testType, ...customParams}});
-
-  if(r.code !== 0) {
-    // 被约束/触发器拦截
-    box.innerHTML = `
-      <div class="demo-result-box error">
-        <div class="result-title">🚫 约束/触发器生效！操作被拦截</div>
+        <div class="result-title">操作意外成功</div>
         <p>${r.msg}</p>
-        <p style="color:var(--text3);font-size:12px;margin-top:8px">
-          自定义参数：<code>${desc}</code><br>
-          CHECK 约束 / 外键约束 / 触发器拦截 → 数据未入库。
-        </p>
+        <p style="color:var(--amber);font-size:12px">可能约束尚未配置，请检查数据库</p>
       </div>`;
-    toast('约束拦截成功', 'info');
-  } else {
-    // 数据成功写入！
-    const d = r.data;
-    box.innerHTML = `
-      <div class="demo-result-box success">
-        <div class="result-title">✅ 数据写入成功！自定义参数通过了所有约束</div>
-        <p style="margin-top:6px">${d.message}</p>
-        ${d.inserted ? `<div style="margin-top:10px;background:var(--bg2);padding:10px;border-radius:6px;font-size:12px;max-height:200px;overflow-y:auto">
-          <strong>实际写入：</strong><pre style="margin:4px 0 0 0;white-space:pre-wrap">${JSON.stringify(d.inserted, null, 2)}</pre>
-        </div>` : ''}
-        ${d.intervention_triggered ? `<p style="color:var(--safe);font-size:12px;margin-top:4px">⚡ 触发器自动生成了 interventions</p>` : ''}
-        ${d.risk_updated ? `<p style="color:var(--safe);font-size:12px">⚡ 触发器自动更新了 risk_levels</p>` : ''}
-        <p style="color:var(--text3);font-size:11px;margin-top:8px">➡️ 打开 Navicat → 对应表 → 按 <b>Ctrl+R</b> 刷新即可实时看到</p>
-      </div>`;
-    toast('数据写入成功！Navicat 按 Ctrl+R 查看', 'success');
   }
 }
 
@@ -2095,87 +2107,20 @@ async function demoProcViolation(testType) {
   const r = await api('/demo/procedure-violation', {method:'POST', body:{test_type: testType}});
 
   if(r.code !== 0) {
-    // 存储过程校验生效 → 参数被拦截
     box.innerHTML = `
       <div class="demo-result-box error">
-        <div class="result-title">🚫 存储过程参数校验生效！操作被拦截</div>
+        <div class="result-title">[OK] 存储过程参数校验生效！</div>
         <p>${r.msg}</p>
         <p style="color:var(--text3);font-size:12px;margin-top:8px">
-          存储过程内部校验了参数合法性 → 返回错误，未执行数据变更。
+          存储过程内部参数校验成功拦截了非法参数，返回错误信息而非执行异常操作。
         </p>
       </div>`;
     toast('参数校验拦截成功', 'info');
   } else {
-    // 参数合法 → 存储过程执行成功！显示实际变化
-    const d = r.data;
     box.innerHTML = `
       <div class="demo-result-box success">
-        <div class="result-title">✅ 存储过程执行成功！</div>
-        <p style="margin-top:6px">${d.message}</p>
-        ${d.procedure_result ? `<p style="color:var(--primary);font-size:13px;margin-top:4px">结果: <code>${d.procedure_result}</code></p>` : ''}
-        ${d.risk_levels ? `<div style="margin-top:10px;background:var(--bg2);padding:10px;border-radius:6px;font-size:12px;max-height:160px;overflow-y:auto">
-          <strong>risk_levels 当前值：</strong><pre style="margin:4px 0 0 0;white-space:pre-wrap">${JSON.stringify(d.risk_levels, null, 2)}</pre>
-        </div>` : ''}
-        ${d.intervention ? `<div style="margin-top:10px;background:var(--bg2);padding:10px;border-radius:6px;font-size:12px;max-height:160px;overflow-y:auto">
-          <strong>interventions 当前值：</strong><pre style="margin:4px 0 0 0;white-space:pre-wrap">${JSON.stringify(d.intervention, null, 2)}</pre>
-        </div>` : ''}
-        <p style="color:var(--text3);font-size:11px;margin-top:8px">➡️ 打开 Navicat → 对应表 → 按 <b>Ctrl+R</b> 刷新即可实时看到</p>
-      </div>`;
-    toast('存储过程执行成功！Navicat 按 Ctrl+R 查看', 'success');
-  }
-}
-
-// ---- 存储过程失败：自定义参数测试 ----
-async function demoProcCustom(testType) {
-  const box = document.getElementById('demo-proc-violation-result');
-  let customParams = {};
-  let desc = '';
-  if (testType === 'user_not_found') {
-    customParams.custom_user_id = document.getElementById('demo-proc-custom-user').value || '9999';
-    desc = `user_id=${customParams.custom_user_id}`;
-  } else if (testType === 'invalid_status') {
-    customParams.custom_status = document.getElementById('demo-proc-custom-status').value || 'deleted';
-    desc = `状态="${customParams.custom_status}"`;
-  } else if (testType === 'intervention_not_found') {
-    customParams.custom_intervention_id = document.getElementById('demo-proc-custom-interv').value || '99999';
-    desc = `干预ID=${customParams.custom_intervention_id}`;
-  }
-
-  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">${desc} — 自定义参数</p></div>`;
-
-  const r = await api('/demo/procedure-violation', {method:'POST', body:{test_type: testType, ...customParams}});
-
-  if(r.code !== 0) {
-    // 被存储过程校验拦截
-    box.innerHTML = `
-      <div class="demo-result-box error">
-        <div class="result-title">🚫 存储过程参数校验生效！操作被拦截</div>
-        <p>${r.msg}</p>
-        <p style="color:var(--text3);font-size:12px;margin-top:8px">
-          自定义参数：<code>${desc}</code><br>
-          存储过程内部校验 → 返回错误，未执行数据变更。
-        </p>
-      </div>`;
-    toast('参数校验拦截成功', 'info');
-  } else {
-    // 参数合法 → 执行成功
-    const d = r.data;
-    box.innerHTML = `
-      <div class="demo-result-box success">
-        <div class="result-title">✅ 存储过程执行成功！</div>
-        <p style="margin-top:6px">${d.message}</p>
-        ${d.procedure_result ? `<p style="color:var(--primary);font-size:13px;margin-top:4px">返回: <code>${d.procedure_result}</code></p>` : ''}
-        ${d.risk_levels ? `<div style="margin-top:10px;background:var(--bg2);padding:10px;border-radius:6px;font-size:12px;max-height:160px;overflow-y:auto">
-          <strong>实际影响的表数据：</strong><pre style="margin:4px 0 0 0;white-space:pre-wrap">${JSON.stringify(d.risk_levels, null, 2)}</pre>
-        </div>` : ''}
-        ${d.intervention ? `<div style="margin-top:10px;background:var(--bg2);padding:10px;border-radius:6px;font-size:12px;max-height:160px;overflow-y:auto">
-          <strong>实际影响的表数据：</strong><pre style="margin:4px 0 0 0;white-space:pre-wrap">${JSON.stringify(d.intervention, null, 2)}</pre>
-        </div>` : ''}
-        <p style="color:var(--text3);font-size:11px;margin-top:8px">➡️ 打开 Navicat → 对应表 → 按 <b>Ctrl+R</b> 刷新即可实时看到</p>
-      </div>`;
-    toast('存储过程执行成功！Navicat 按 Ctrl+R 查看', 'success');
-  }
-}
+        <div class="result-title">操作意外成功</div>
+        <p>${JSON.stringify(r.data)}</p>
       </div>`;
   }
 }

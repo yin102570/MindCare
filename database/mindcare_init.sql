@@ -87,6 +87,7 @@ CREATE TABLE assessments (
     level           ENUM('normal','mild','moderate','severe') DEFAULT 'normal' COMMENT '评估结果等级',
     note            TEXT COMMENT '备注',
     assessed_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_total_score CHECK (total_score >= 0),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (scale_id) REFERENCES scales(scale_id)
 ) COMMENT='心理评估记录表';
@@ -99,6 +100,7 @@ CREATE TABLE answers (
     assess_id       INT NOT NULL COMMENT '评估记录ID',
     question_id     INT NOT NULL COMMENT '题目ID',
     selected_score  INT NOT NULL DEFAULT 0 COMMENT '选择的分值(0-3)',
+    CONSTRAINT chk_answer_score CHECK (selected_score BETWEEN 0 AND 3),
     FOREIGN KEY (assess_id) REFERENCES assessments(assess_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES questions(question_id)
 ) COMMENT='答题明细表';
@@ -152,9 +154,15 @@ BEGIN
     DECLARE v_priority VARCHAR(20);
     DECLARE v_reason VARCHAR(200);
     DECLARE v_counselor_id INT;
+    DECLARE v_norm_score DECIMAL(8,2) DEFAULT 0;
+    DECLARE v_scale_max INT DEFAULT 1;
 
     -- 根据等级设置优先级
     SET v_level = NEW.level;
+
+    -- 归一化分数：原始分 / 量表满分 * 100
+    SELECT COALESCE(max_score, 1) INTO v_scale_max FROM scales WHERE scale_id = NEW.scale_id;
+    SET v_norm_score = LEAST(100, (NEW.total_score / v_scale_max) * 100);
 
     IF v_level = 'severe' THEN
         SET v_priority = 'urgent';
@@ -177,11 +185,11 @@ BEGIN
         INSERT INTO interventions (user_id, counselor_id, trigger_reason, assess_id, priority, status)
         VALUES (NEW.user_id, v_counselor_id, v_reason, NEW.assess_id, v_priority, 'pending');
 
-        -- 更新或插入风险等级
+        -- 更新或插入风险等级（使用归一化分数）
         INSERT INTO risk_levels (user_id, risk_score, risk_level, last_assess_id)
         VALUES (
             NEW.user_id,
-            NEW.total_score,
+            v_norm_score,
             CASE v_level
                 WHEN 'severe'   THEN 'crisis'
                 WHEN 'moderate' THEN 'warning'
@@ -190,7 +198,7 @@ BEGIN
             NEW.assess_id
         )
         ON DUPLICATE KEY UPDATE
-            risk_score      = NEW.total_score,
+            risk_score      = v_norm_score,
             risk_level      = CASE v_level
                                   WHEN 'severe'   THEN 'crisis'
                                   WHEN 'moderate' THEN 'warning'
@@ -203,12 +211,12 @@ BEGIN
         INSERT INTO risk_levels (user_id, risk_score, risk_level, last_assess_id)
         VALUES (
             NEW.user_id,
-            NEW.total_score,
+            v_norm_score,
             CASE v_level WHEN 'mild' THEN 'watch' ELSE 'safe' END,
             NEW.assess_id
         )
         ON DUPLICATE KEY UPDATE
-            risk_score      = NEW.total_score,
+            risk_score      = v_norm_score,
             risk_level      = CASE v_level WHEN 'mild' THEN 'watch' ELSE 'safe' END,
             last_assess_id  = NEW.assess_id,
             updated_at      = NOW();
@@ -233,52 +241,73 @@ BEGIN
     DECLARE v_risk_level VARCHAR(20) DEFAULT 'safe';
     DECLARE v_last_id INT DEFAULT NULL;
 
-    -- 取最近3次评估的加权平均分（最近权重高）
+    -- 取最近3次评估，按量表满分归一化到百分制后加权平均（最近权重高）
     SELECT
         COUNT(*),
-        SUM(total_score * weight) / SUM(weight),
-        MAX(total_score),
+        SUM(norm_score * weight) / SUM(weight),
+        MAX(norm_score),
         MAX(assess_id)
     INTO v_count, v_avg_score, v_max_score, v_last_id
     FROM (
-        SELECT assess_id, total_score,
-               CASE ROW_NUMBER() OVER (ORDER BY assessed_at DESC)
+        SELECT a.assess_id, a.total_score,
+               GREATEST(0, (a.total_score / NULLIF(s.max_score,0)) * 100) AS norm_score,
+               CASE ROW_NUMBER() OVER (ORDER BY a.assessed_at DESC)
                    WHEN 1 THEN 3
                    WHEN 2 THEN 2
                    ELSE 1
                END AS weight
-        FROM assessments
-        WHERE user_id = p_user_id
-        ORDER BY assessed_at DESC
+        FROM assessments a
+        JOIN scales s ON a.scale_id = s.scale_id
+        WHERE a.user_id = p_user_id
+        ORDER BY a.assessed_at DESC
         LIMIT 3
     ) AS recent;
 
     IF v_count = 0 THEN
         SET p_risk_level = 'safe';
-        LEAVE sp_calc_risk_score;
+    ELSE
+        -- 综合风险分：归一化加权均值*0.6 + 归一化历史最高*0.4，结果已为百分制
+        SET v_risk_score = GREATEST(0, LEAST(100, (v_avg_score * 0.6 + v_max_score * 0.4)));
+
+        -- 判定风险等级
+        SET v_risk_level = CASE
+            WHEN v_risk_score >= 75 THEN 'crisis'
+            WHEN v_risk_score >= 50 THEN 'warning'
+            WHEN v_risk_score >= 25 THEN 'watch'
+            ELSE 'safe'
+        END;
+
+        -- 更新risk_levels表
+        INSERT INTO risk_levels (user_id, risk_score, risk_level, last_assess_id)
+        VALUES (p_user_id, v_risk_score, v_risk_level, v_last_id)
+        ON DUPLICATE KEY UPDATE
+            risk_score     = v_risk_score,
+            risk_level     = v_risk_level,
+            last_assess_id = v_last_id,
+            updated_at     = NOW();
+
+        SET p_risk_level = v_risk_level;
     END IF;
+END$$
 
-    -- 综合风险分：加权均值 * 0.6 + 历史最高分 * 0.4，归一化到100
-    SET v_risk_score = LEAST(100, (v_avg_score * 0.6 + v_max_score * 0.4));
+DELIMITER ;
 
-    -- 判定风险等级
-    SET v_risk_level = CASE
-        WHEN v_risk_score >= 75 THEN 'crisis'
-        WHEN v_risk_score >= 50 THEN 'warning'
-        WHEN v_risk_score >= 25 THEN 'watch'
-        ELSE 'safe'
-    END;
 
-    -- 更新risk_levels表
-    INSERT INTO risk_levels (user_id, risk_score, risk_level, last_assess_id)
-    VALUES (p_user_id, v_risk_score, v_risk_level, v_last_id)
-    ON DUPLICATE KEY UPDATE
-        risk_score     = v_risk_score,
-        risk_level     = v_risk_level,
-        last_assess_id = v_last_id,
-        updated_at     = NOW();
+-- ============================================================
+-- 存储过程 1b：带用户存在性校验的风险评估包装器（用于违背演示）
+-- ============================================================
+DELIMITER $$
 
-    SET p_risk_level = v_risk_level;
+CREATE PROCEDURE sp_calc_risk_score_v2(IN p_user_id INT, OUT p_result VARCHAR(100))
+BEGIN
+    DECLARE v_exist INT DEFAULT 0;
+    SELECT COUNT(*) INTO v_exist FROM users WHERE user_id = p_user_id;
+    IF v_exist = 0 THEN
+        SET p_result = 'ERROR: 用户不存在';
+    ELSE
+        CALL sp_calc_risk_score(p_user_id, @tmp_level);
+        SET p_result = CONCAT('SUCCESS: 风险等级 ', @tmp_level);
+    END IF;
 END$$
 
 DELIMITER ;
@@ -339,16 +368,17 @@ CREATE OR REPLACE VIEW v_dept_mental_stats AS
 SELECT
     u.department,
     COUNT(DISTINCT u.user_id)                                           AS total_students,
-    COUNT(DISTINCT a.assess_id)                                         AS total_assessments,
-    ROUND(AVG(a.total_score), 2)                                        AS avg_score,
-    SUM(CASE WHEN a.level = 'severe'   THEN 1 ELSE 0 END)              AS severe_count,
-    SUM(CASE WHEN a.level = 'moderate' THEN 1 ELSE 0 END)              AS moderate_count,
-    SUM(CASE WHEN a.level = 'mild'     THEN 1 ELSE 0 END)              AS mild_count,
-    SUM(CASE WHEN a.level = 'normal'   THEN 1 ELSE 0 END)              AS normal_count,
-    ROUND(SUM(CASE WHEN a.level IN ('moderate','severe') THEN 1 ELSE 0 END) * 100.0
+    COALESCE(COUNT(DISTINCT a.assess_id), 0)                            AS total_assessments,
+    ROUND(COALESCE(AVG(a.total_score), 0), 2)                           AS avg_score,
+    COALESCE(SUM(CASE WHEN a.level = 'severe'   THEN 1 ELSE 0 END), 0) AS severe_count,
+    COALESCE(SUM(CASE WHEN a.level = 'moderate' THEN 1 ELSE 0 END), 0) AS moderate_count,
+    COALESCE(SUM(CASE WHEN a.level = 'mild'     THEN 1 ELSE 0 END), 0) AS mild_count,
+    COALESCE(SUM(CASE WHEN a.level = 'normal'   THEN 1 ELSE 0 END), 0) AS normal_count,
+    ROUND(COALESCE(SUM(CASE WHEN a.level IN ('moderate','severe') THEN 1 ELSE 0 END), 0) * 100.0
           / NULLIF(COUNT(a.assess_id), 0), 2)                           AS risk_rate_pct
 FROM users u
 LEFT JOIN assessments a ON u.user_id = a.user_id
+WHERE u.department != '心理咨询中心'
 GROUP BY u.department;
 
 

@@ -1,381 +1,350 @@
-<div align="center">
+# MindCare 心理健康评估与干预管理系统
 
-<img src="https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-<img src="https://img.shields.io/badge/Flask-2.3.3-000000?style=for-the-badge&logo=flask&logoColor=white" alt="Flask">
-<img src="https://img.shields.io/badge/MySQL-8.0+-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="MySQL">
-<img src="https://img.shields.io/badge/原生_JavaScript-ES6-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JS">
-<img src="https://img.shields.io/badge/Chart.js-4.4.0-FF6384?style=for-the-badge&logo=chartdotjs&logoColor=white" alt="Chart.js">
-<img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT">
+> 数据库系统工程作业 | MySQL 8.0 + Flask + 原生前端
 
-</div>
+---
 
-<br>
+## 目录
 
-# 🧠 MindCare — 心理健康评估与干预管理系统
+- [项目简介](#项目简介)
+- [功能模块](#功能模块)
+- [技术栈](#技术栈)
+- [项目结构](#项目结构)
+- [快速启动](#快速启动)
+- [数据库设计](#数据库设计)
+- [API 接口文档](#api-接口文档)
+- [演示账号](#演示账号)
+- [数据库操作演示](#数据库操作演示)
 
-> **数据库系统课程项目** | 基于 B/S 架构，MySQL 触发器 + 存储过程 + 视图全覆盖
+---
 
-<br>
+## 项目简介
 
-## ✨ 亮点速览
+MindCare 是一个基于 B/S 架构的心理健康评估与干预管理平台。学生可在线完成心理量表测评，系统自动计算风险等级并生成干预任务；管理员可管理用户、干预任务、查看院系统计数据。
 
-<table>
-<tr>
-<td width="50%">
+**核心特性：**
+- 触发器自动生成干预任务，全程无需应用层干预
+- 事务保证用户注销时 5 表级联删除的原子性
+- 存储过程实现加权风险计算（时间衰减 3:2:1）
+- 8 个视图封装复杂多表 JOIN，统一数据出口
 
-### 🔧 数据库核心技术
-- **3 项核心对象**：1 个触发器 + 2 个存储过程 + 8 个视图
-- **8 张业务表**，10 条外键约束，级联删除策略
-- **20+ 索引优化**方案（含联合索引、覆盖索引）
-- **3 级权限角色**管理设计
+---
 
-</td>
-<td width="50%">
+## 功能模块
 
-### 🎯 交互式教学演示
-- **4 大演示模块**：事务回滚、触发器约束、存储过程校验、视图查询
-- **自定义参数输入**：可输入任意值验证数据库约束机制
-- **实时 Navicat 联动**：操作后 `Ctrl+R` 即可看到数据变化
+### 学生端
 
-</td>
-</tr>
-</table>
+| 模块 | 说明 |
+|------|------|
+| 仪表盘 | 数据总览、趋势图、风险分布 |
+| 开始测评 | 选择量表（PHQ-9 / GAD-7 / PSS-10 / PSQI），逐题作答，实时计分 |
+| 测评记录 | 查看个人评估历史、风险等级、干预状态 |
+| 我的档案 | 基本信息、风险评估、干预记录 |
 
-<br>
+### 管理员端
 
-## 📸 界面展示
+| 模块 | 说明 |
+|------|------|
+| 数据总览 | 注册用户数 / 累计测评 / 待处理干预 / 高风险用户 + 趋势图 |
+| 用户管理 | 用户列表 + 事务级联删除 |
+| 干预管理 | 按状态筛选，调用存储过程更新状态 |
+| 院系统计 | 图表 / 表格 / 详细分析三种视图，支持 CSV 导出 |
+| 风险计算 | 选择用户 → 调用存储过程计算综合风险分 |
 
-| 管理员仪表盘 | 测评作答界面 | 数据库操作演示 |
-|:---:|:---:|:---:|
-| 数据总览 + 趋势图 + 风险分布 | 逐题作答 + 实时计分 | 事务/触发器/存储过程/视图 |
+### 数据库操作演示
 
-> 💡 打开 `index.html` 或启动 Flask 后访问 `http://localhost:5000` 即可浏览所有页面。
+| 演示 | 涉及数据库操作 |
+|------|----------------|
+| 事务删除 | 正常级联删除 + 违背回滚 |
+| 触发器 | 提交评估自动生成干预 + 4 种约束违背 |
+| 存储过程 | 加权风险计算 + 3 种参数校验 |
+| 视图查询 | 8 个视图白名单查询 |
 
-<br>
+---
 
-## 🏗 系统架构
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 后端框架 | Python 3 + Flask 2.3.3 |
+| 数据库 | MySQL 8.0 + PyMySQL 1.1.0 |
+| 前端 | 原生 HTML / CSS / JavaScript + Chart.js 4.4.0 |
+| 认证 | Token 认证（SHA256 密码哈希 + secrets 随机令牌） |
+| 跨域 | Flask-CORS 4.0.0 |
+
+---
+
+## 项目结构
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    前端 (SPA)                         │
-│   index.html  │  Chart.js  │  Vanilla JS (ES6)       │
-├──────────────────────────────────────────────────────┤
-│                  RESTful API                          │
-│         Flask 2.3.3  │  Flask-CORS  │  Session       │
-├──────────────────────────────────────────────────────┤
-│                    MySQL 8.0                          │
-│  ┌──────────┐ ┌───────────┐ ┌──────┐ ┌──────────┐  │
-│  │ 触发器   │ │ 存储过程   │ │ 视图 │ │ 事务管理 │  │
-│  │ Trigger  │ │Procedure  │ │ View │ │Transaction│  │
-│  └──────────┘ └───────────┘ └──────┘ └──────────┘  │
-├──────────────────────────────────────────────────────┤
-│  8 张表  │  10 条外键  │  4 级风险等级  │  级联删除  │
-└──────────────────────────────────────────────────────┘
+MindCare/
+├── app.py                          # Flask 后端主程序（936 行）
+├── index.html                      # 单页面前端应用（1994 行）
+├── gen_report.js                   # Word 报告生成脚本
+├── SQL_code.sql                    # 补充 SQL 脚本
+├── MindCare_数据库优化方案.sql      # 数据库全面优化方案（1641 行）
+├── README.md                       # 本文件
+├── 工程作业报告.docx               # 作业报告
+├── backend/
+│   └── requirements.txt            # Python 依赖
+└── database/
+    ├── mindcare_init.sql           # 核心初始化脚本（8 表 + 触发器 + 存储过程 + 视图）
+    └── mindcare_demo_data.sql      # 演示数据
 ```
 
-<br>
+---
 
-## 📊 数据库设计（ER 关系）
+## 快速启动
 
-```
-                    ┌──────────────┐
-                    │  counselors  │  咨询师
-                    │  name, sp... │
-                    └──────┬───────┘
-                           │ 1:N
-                           ▼
-┌──────────┐     ┌──────────────────┐     ┌──────────────┐
-│  scales  │────▶│   assessments    │◀────│    users     │
-│  量表    │     │  评估记录        │     │   学生用户   │
-│ name, max│     │ total_score,level│     │student_id,dep│
-└────┬─────┘     └──┬──────┬────┬───┘     └──────┬───────┘
-     │              │      │    │                │
-     │ 1:N          │ 1:N  │    │ 1:1            │ 1:N
-     ▼              ▼      │    ▼                ▼
-┌──────────┐  ┌──────────┐ │  ┌────────────┐  ┌──────────┐
-│ questions│  │ answers  │ │  │risk_levels │  │interven- │
-│  题目    │  │  答题    │ │  │  风险等级  │  │  tions   │
-│opt_0~opt3│  │selected  │ │  │risk_score  │  │干预任务  │
-│          │  │_score(0-3│ │  │safe/watch/ │  │priority  │
-│          │  │          │ │  │warn/crisis │  │pending.. │
-└──────────┘  └──────────┘ │  └────────────┘  └──────────┘
-                           │
-                    ┌──────┴────────┐
-                    │trg_auto_inter │
-                    │ AFTER INSERT  │
-                    │ 自动生成干预  │
-                    └───────────────┘
-```
+### 1. 环境要求
 
-<br>
+- Python 3.8+
+- MySQL 8.0+
+- Node.js（仅报告生成需要）
 
-## 🔗 数据库对象详解
+### 2. 初始化数据库
 
-### 触发器 — `trg_auto_intervention`
+打开 MySQL 命令行或 Navicat，依次执行：
 
-提交评估后 **MySQL 自动执行**，无需应用层代码：
-
-| 评估等级 | 风险等级 | 干预优先级 | 是否生成干预 |
-|:---:|:---:|:---:|:---:|
-| `severe` | 🚨 `crisis` | `urgent` | ✅ |
-| `moderate` | ⚠️ `warning` | `high` | ✅ |
-| `mild` | 🟡 `watch` | — | ❌ |
-| `normal` | 🟢 `safe` | — | ❌ |
-
-### 存储过程
-
-| 过程 | 功能 | 算法 |
-|------|------|------|
-| `sp_calc_risk_score` | 加权风险计算 | 最近3次 × 时间权重(3:2:1) × 0.6 + 历史最高 × 0.4 |
-| `sp_update_intervention` | 干预状态更新 | 参数校验 + `completed` 时自动降级风险 |
-
-### 视图（8 个）
-
-| 视图 | JOIN 表数 | 用途 |
-|------|:---:|------|
-| `v_dept_mental_stats` | 2 | 院系心理健康综合统计 |
-| `v_intervention_detail` | 4 | 干预任务详情（学生+咨询师） |
-| `v_high_risk_users` | 5 | 高风险用户 ⚡ 最多 5 表联查 |
-| `v_counselor_workload` | 2 | 咨询师工作量排行 |
-| `v_monthly_trend` | 2 | 月度趋势分析 |
-| `v_daily_assess_report` | 2 | 每日评估报表 |
-| `v_scale_usage_stats` | 2 | 量表使用频次 |
-| `v_user_assess_history` | 4 | 用户评估完整轨迹 |
-
-<br>
-
-## 🚀 快速启动
-
-### 前置要求
-
-- **Python** ≥ 3.8
-- **MySQL** ≥ 8.0
-- **Node.js**（仅报告生成 `gen_report.js` 需要）
-
-### 1️⃣ 初始化数据库
-
-```sql
+```bash
+# 创建数据库
 CREATE DATABASE IF NOT EXISTS mindcare CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE mindcare;
+
+# 导入核心结构
 SOURCE database/mindcare_init.sql;
+
+# 导入演示数据
 SOURCE database/mindcare_demo_data.sql;
 ```
 
-### 2️⃣ 安装依赖
+### 3. 安装 Python 依赖
 
 ```bash
-pip install -r backend/requirements.txt
+cd backend
+pip install -r requirements.txt
 ```
 
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| Flask | 2.3.3 | Web 框架 |
-| Flask-CORS | 4.0.0 | 跨域支持 |
-| PyMySQL | 1.1.0 | MySQL 连接驱动 |
-| Werkzeug | 2.3.7 | SHA256 密码哈希 |
+依赖清单（`backend/requirements.txt`）：
 
-### 3️⃣ 配置数据库连接
+```
+flask==2.3.3
+flask-cors==4.0.0
+pymysql==1.1.0
+Werkzeug==2.3.7
+```
 
-编辑 `app.py` 中 `DB_CONFIG`：
+### 4. 配置数据库连接
+
+在 `app.py` 中确认连接信息：
 
 ```python
 DB_CONFIG = {
-    'host':     'localhost',
-    'port':     3306,
-    'user':     'root',
-    'password': 'your_password',
-    'database': 'mindcare',
-    'charset':  'utf8mb4',
+    'host':      'localhost',
+    'port':      3306,
+    'user':      'root',
+    'password':  '123456',
+    'database':  'mindcare',
+    'charset':   'utf8mb4',
+    'cursorclass': pymysql.cursors.DictCursor
 }
 ```
 
-### 4️⃣ 启动
+### 5. 启动应用
 
 ```bash
-python app.py
+cd MindCare          # 回到项目根目录
+python app.py        # 启动后端服务
 ```
 
-浏览器打开 **http://localhost:5000**
+浏览器访问：**http://localhost:5000**
 
-<br>
+---
 
-## 👥 演示账号
+## 数据库设计
 
-| 角色 | 用户名 | 密码 | 说明 |
-|:---:|------|------|------|
-| 管理员 | `admin` | `admin123` | 心理咨询中心，可访问管理后台 |
-| 学生 | `2021001001` | `123456` | 计算机学院学生 |
+### 核心表（8 张）
 
-<br>
+| 表名 | 说明 | 关键字段 |
+|------|------|----------|
+| `counselors` | 心理咨询师 | counselor_id, name, specialty, available |
+| `users` | 学生用户 | user_id, student_id, department, password_hash |
+| `scales` | 心理量表 | scale_id, name, type, max_score |
+| `questions` | 量表题目 | question_id, scale_id(FK), seq_no, opt_0~opt_3 |
+| `assessments` | 评估记录 | assess_id, user_id(FK), scale_id(FK), total_score, level |
+| `answers` | 答题明细 | answer_id, assess_id(FK), question_id(FK), selected_score |
+| `risk_levels` | 综合风险等级 | risk_id, user_id(UNIQUE FK), risk_score, risk_level |
+| `interventions` | 干预任务 | intervention_id, user_id(FK), counselor_id(FK), priority, status |
 
-## 🎮 数据库操作演示（核心特色）
+### 外键关系图
 
-> 管理员登录 → 左侧导航 **数据库系统 → 数据库操作**
+```
+counselors ──┐
+             │ (counselor_id)
+             ├──→ interventions
+             │
+users ───────┤ (user_id)
+             │       │
+             │       ├──→ assessments ──→ answers ←── questions ←── scales
+             │       │
+             │       ├──→ risk_levels
+             │       │
+             │       └──→ interventions
+             │
+scales ──────┤ (scale_id)
+             └──→ assessments
+```
 
-### 🗑 事务删除
+### 触发器
 
-| 操作 | 说明 |
-|------|------|
-| **正常级联删除** | 输入用户ID → 5 张表（interventions → risk_levels → assessments → answers → users）原子性级联删除 |
-| **回滚测试** | 删除不存在的用户 → 事务检测失败 → **全部回滚** |
-| **🔧 自定义ID** | 输入任意 user_id 测试不同场景 |
-| **💾 恢复数据** | 一键恢复被删除的演示用户（事务批量插入） |
+| 名称 | 时机 | 功能 |
+|------|------|------|
+| `trg_auto_intervention` | AFTER INSERT ON assessments | 根据评估等级自动生成干预任务、分配咨询师、更新风险等级 |
 
-### ⚡ 触发器约束
+**触发逻辑：**
 
-| 测试场景 | 默认值 | 🔧 可自定义 |
-|----------|:---:|:---:|
-| 非法 level 值 | `"critical"` | ✅ 任意字符串 |
-| 不存在 user_id | `9999` | ✅ 任意 ID |
-| 负数分数 | `-5` | ✅ 任意数值 |
-| 越界答案分值 | `5` | ✅ 任意分值 |
+| 评估等级 | 干预优先级 | 风险等级 |
+|----------|-----------|----------|
+| severe | urgent | crisis |
+| moderate | high | warning |
+| mild | — | watch |
+| normal | — | safe |
 
-> 🎯 **亮点**：每条测试都有自定义输入框，输入**合法值**（如 `level="normal"`、`user_id=1`）会**成功写入**，后端回查数据库返回实际插入数据，Navicat 按 `Ctrl+R` 可实时验证。
+### 存储过程
 
-### 📦 存储过程
+| 名称 | 参数 | 功能 |
+|------|------|------|
+| `sp_calc_risk_score` | IN p_user_id, OUT p_risk_level | 加权风险计算：取最近 3 次评估，时间权重 3:2:1，综合分 = 加权平均 × 0.6 + 最高分 × 0.4 |
+| `sp_update_intervention` | IN p_intervention_id, IN p_new_status, IN p_notes, OUT p_result | 更新干预任务状态，completed 时自动降级风险等级 |
 
-| 测试场景 | 默认值 | 🔧 可自定义 |
-|----------|:---:|:---:|
-| 不存在用户调用 | `user_id=9999` | ✅ 任意 ID |
-| 非法状态值 | `"deleted"` | ✅ 任意状态 |
-| 不存在干预任务 | `id=99999` | ✅ 任意干预 ID |
+### 视图（8 个）
 
-> 🎯 **亮点**：输入合法参数 → 存储过程**确实执行**，后端回查 risk_levels / interventions 的实际变化并返回。
+| 视图 | 说明 | 涉及表数 |
+|------|------|----------|
+| `v_dept_mental_stats` | 院系心理健康综合统计 | 2 |
+| `v_intervention_detail` | 干预任务详情 | 4 |
+| `v_user_assess_history` | 用户评估历史 | 4 |
+| `v_daily_assess_report` | 每日评估汇总 | 2 |
+| `v_scale_usage_stats` | 量表使用频次统计 | 2 |
+| `v_counselor_workload` | 咨询师工作量统计 | 2 |
+| `v_high_risk_users` | 高风险用户明细 | 5 |
+| `v_monthly_trend` | 月度趋势统计 | 2 |
 
-### 👁 视图查询
+---
 
-点击任意视图按钮 → 查看封装后的多表 JOIN 结果，支持分页和结果截断。
+## API 接口文档
 
-<br>
-
-## 📡 API 端点
-
-<details>
-<summary><b>🔐 认证接口（3 个）</b></summary>
+### 认证
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/login` | 登录（学号/邮箱），返回 token |
+| POST | `/api/login` | 登录（支持学号/邮箱），返回 token |
 | POST | `/api/logout` | 登出 |
-| GET | `/api/me` | 当前用户 + 风险等级 |
+| GET | `/api/me` | 获取当前用户信息 + 风险等级 |
 
-</details>
-
-<details>
-<summary><b>👨‍🎓 学生端（6 个）</b></summary>
+### 学生
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/my/profile` | 心理档案 |
-| GET | `/api/my/assessments` | 评估历史 |
-| GET | `/api/scales` | 量表列表 |
-| GET | `/api/scales/<id>/questions` | 量表题目 |
+| GET | `/api/my/profile` | 我的档案 |
+| GET | `/api/my/assessments` | 我的评估历史 |
+| GET | `/api/scales` | 获取量表列表 |
+| GET | `/api/scales/<id>/questions` | 获取量表题目 |
 | POST | `/api/assessments` | 提交评估（触发存储过程） |
-| GET | `/api/assessments/history` | 历史记录 |
 
-</details>
-
-<details>
-<summary><b>👨‍💼 管理员端（7 个）</b></summary>
+### 管理员
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/admin/dashboard` | 仪表盘（趋势图+分布） |
+| GET | `/api/admin/dashboard` | 仪表盘数据 |
 | GET | `/api/admin/users` | 用户列表 |
-| DELETE | `/api/admin/users/<uid>` | **事务级联删除** |
+| DELETE | `/api/admin/users/<uid>` | 事务级联删除用户 |
 | GET | `/api/admin/dept-stats` | 院系统计 |
-| GET | `/api/admin/interventions` | 干预任务（视图查询） |
-| PUT | `/api/admin/interventions/<iid>` | 更新干预（存储过程） |
-| POST | `/api/admin/calc-risk` | 风险计算（存储过程） |
+| GET | `/api/admin/interventions` | 干预任务列表 |
+| PUT | `/api/admin/interventions/<iid>` | 更新干预任务 |
+| POST | `/api/admin/calc-risk` | 计算风险分 |
 
-</details>
-
-<details>
-<summary><b>🧪 演示接口（7 个）</b></summary>
+### 演示
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/demo/trigger-test` | 触发器正常演示 |
-| POST | `/api/demo/trigger-violation` | 触发器约束违背 |
+| POST | `/api/demo/trigger-violation` | 触发器违背演示 |
 | POST | `/api/demo/procedure-test` | 存储过程正常演示 |
-| POST | `/api/demo/procedure-violation` | 存储过程参数校验 |
-| GET | `/api/demo/view-query` | 视图查询（8 个白名单） |
-| GET | `/api/demo/delete-verify` | 删除前数据验证 |
-| POST | `/api/demo/restore-users` | 恢复演示用户 |
+| POST | `/api/demo/procedure-violation` | 存储过程违背演示 |
+| GET | `/api/demo/view-query` | 视图查询 |
+| GET | `/api/demo/delete-verify` | 删除前验证 |
 
-</details>
+---
 
-<br>
+## 演示账号
 
-## 📁 项目结构
+| 角色 | 用户名 | 密码 | 说明 |
+|------|--------|------|------|
+| 管理员 | `admin` | `admin123` | 心理咨询中心，可访问管理后台 |
+| 学生 | `2021001001` | `123456` | 计算机学院学生 |
 
-```
-MindCare/
-├── app.py                        # Flask 后端（42 KB）, 23 个 API
-├── index.html                    # SPA 前端（110 KB）, 管理员/学生端
-├── gen_report.js                 # Word 报告自动生成（Node.js）
-├── .gitignore
-├── README.md
-├── 工程作业报告.docx / .pdf       # 完整作业报告
-├── backend/
-│   └── requirements.txt          # Python 依赖
-├── database/
-│   ├── mindcare_init.sql         # 核心 DDL（8 表 + 触发器 + 存储过程 + 视图）
-│   └── mindcare_demo_data.sql    # 演示数据（8 用户 + 量表 + 题目）
-└── MindCare_数据库优化方案.sql    # 优化方案（20+ 索引 + 新存储过程 + 新触发器）
-```
+---
 
-<br>
+## 数据库操作演示
 
-## 🛡 安全特性
+在左侧导航栏 **数据库系统 → 数据库操作** 中，可进行以下演示：
 
-- **密码哈希**：MySQL `SHA2(.., 256)` 存储，不存储明文
-- **Token 认证**：`secrets.token_hex(32)` 生成随机令牌
-- **SQL 注入防护**：全部使用参数化查询 `%s` 占位符
-- **权限校验**：每个 API 校验 token + 角色，管理员接口校验 `department='心理咨询中心'`
-- **视图白名单**：演示接口仅允许预定义的 8 个视图查询
+### 1. 事务删除
+- **正常删除**：输入用户 ID，5 张表（users → assessments → answers / risk_levels → interventions）原子性级联删除
+- **违背回滚**：演示事务中某步失败后全部回滚
 
-<br>
+### 2. 触发器添加
+- **正常触发**：提交评估 → 触发器自动生成干预任务 + 更新风险等级
+- **违背演示**（4 种）：
+  - 非法 level 值（不在 ENUM 范围）
+  - 不存在的外键引用
+  - 负数分数（违反 CHECK 约束）
+  - NULL 必填字段
 
-## 📈 优化方案
+### 3. 存储过程更新
+- **正常调用**：选择用户 → 调用 `sp_calc_risk_score` 计算加权风险
+- **违背演示**（3 种）：
+  - 不存在的用户 ID
+  - 干预任务不存在
+  - 非法状态值
 
-`MindCare_数据库优化方案.sql` 包含遵循 **"只增不减"原则** 的完整优化：
+### 4. 视图查询
+- 选择任意视图 → 查看封装后的多表 JOIN 结果
+- 8 个视图均支持直接查询
 
-| 类别 | 内容 |
-|------|------|
-| 📊 索引优化 | 20+ 条（联合索引、唯一索引、覆盖索引） |
-| ✅ CHECK 约束 | 6 个新增约束（分数范围、日期范围、状态枚举） |
-| 📝 字段注释 | 全库字段补充完整中文 COMMENT |
-| 🔧 存储过程 | 5 个新增（批量操作、分页查询、仪表盘统计） |
-| ⚡ 触发器 | 5 个新增（操作日志、数据校验、状态联动） |
-| 🗃 拓展表 | 4 张（操作日志、用户分类、预警规则、排班表） |
-| 👑 权限管理 | 3 个角色 + 分层 GRANT 权限 |
+---
 
-<br>
+## 实时查看数据
 
-## 🚀 部署到 GitHub
+推荐使用 **Navicat** 连接 MySQL 实时观察数据变化：
 
-```bash
-git init
-git add .
-git commit -m "🎉 Initial commit: MindCare 心理健康管理系统"
-git branch -M main
-git remote add origin https://github.com/yin102570/MindCare.git
-git push -u origin main
-```
+1. 新建 MySQL 连接
+2. 主机：`localhost` | 端口：`3306` | 用户名：`root` | 密码：`123456`
+3. 双击 `mindcare` 库 → 展开 **表** → 双击任意表查看数据
+4. 前端操作后按 `Ctrl+R` 刷新即可看到实时变化
 
-<br>
+---
 
-## 📄 许可证
+## 优化方案
 
-本项目为**数据库系统工程课程作业**，采用 MIT License，仅供学习参考。
+项目包含一份完整的数据库优化方案（`MindCare_数据库优化方案.sql`），遵循 **只增不减** 原则：
 
-<br>
+- 新增 20+ 索引（联合索引、唯一索引）
+- 新增 6 个 CHECK 约束
+- 全库字段补充完整中文注释
+- 存储过程增强（事务控制、异常捕获）
+- 新增 5 个存储过程（批量操作、分页查询、仪表盘统计）
+- 新增 5 个触发器（数据校验、操作日志）
+- 新增 4 张拓展表（日志、分类、预警、排班）
+- 3 个权限角色 + 分层权限管理
 
-<div align="center">
+---
 
-**⭐ 如果这个项目对你有帮助，请给一个 Star！**
+## 许可证
 
-Made with ❤️ by [yin102570](https://github.com/yin102570)
+本项目为数据库系统工程作业，仅供学习参考。
 
-</div>
+---
+
+> 最后更新：2026-05-30
