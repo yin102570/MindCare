@@ -23,7 +23,7 @@
   --text2: #94a3b8;
   --text3: #64748b;
   --safe: #10b981;
-  --watch: #f59e0b;
+  --watch: #3b82f6;
   --warning: #f97316;
   --crisis: #ef4444;
   --radius: 14px;
@@ -158,7 +158,7 @@ tbody td{padding:13px 16px;color:var(--text);vertical-align:middle}
 /* ===== BADGES ===== */
 .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
 .badge-safe{background:rgba(16,185,129,.15);color:#10b981}
-.badge-watch{background:rgba(245,158,11,.15);color:#f59e0b}
+.badge-watch{background:rgba(59,130,246,.15);color:#3b82f6}
 .badge-warning{background:rgba(249,115,22,.15);color:#f97316}
 .badge-crisis{background:rgba(239,68,68,.15);color:#ef4444}
 .badge-normal{background:rgba(100,116,139,.15);color:#94a3b8}
@@ -1156,13 +1156,18 @@ async function loadDashboard() {
   });
 
   const rLabels = {safe:'安全',watch:'观察',warning:'警示',crisis:'危机'};
-  const rColors = ['#10b981','#f59e0b','#f97316','#ef4444'];
-  const rData = d.risk_dist.map(r=>r.cnt);
-  const rLab = d.risk_dist.map(r=>rLabels[r.risk_level]||r.risk_level);
+  const rColorMap = {safe:'#10b981', watch:'#3b82f6', warning:'#f97316', crisis:'#ef4444'};
+  // 固定顺序：安全→观察→警示→危机，避免数据库返回顺序导致颜色错位
+  const rOrder = ['safe','watch','warning','crisis'];
+  const rData = rOrder.map(level => {
+    const found = d.risk_dist.find(r => r.risk_level === level);
+    return found ? found.cnt : 0;
+  });
+  const rLab = rOrder.map(level => rLabels[level]);
   if(riskChart) riskChart.destroy();
   riskChart = new Chart(document.getElementById('chart-risk'), {
     type:'doughnut',
-    data:{ labels:rLab, datasets:[{data:rData, backgroundColor:rColors.slice(0,rData.length), borderWidth:3, borderColor:'#141b2d', hoverBorderColor:'#1a2340', hoverBorderWidth:4}] },
+    data:{ labels:rLab, datasets:[{data:rData, backgroundColor:rOrder.map(l=>rColorMap[l]), borderWidth:3, borderColor:'#141b2d', hoverBorderColor:'#1a2340', hoverBorderWidth:4}] },
     options:{
       responsive:true,
       maintainAspectRatio:false,
@@ -1179,16 +1184,20 @@ async function loadDashboard() {
             font:{size:13},
             generateLabels: function(chart) {
               const data = chart.data;
-              return data.labels.map((label, i) => ({
-                text: label + '  ' + data.datasets[0].data[i] + '人',
-                fillStyle: data.datasets[0].backgroundColor[i],
-                strokeStyle: data.datasets[0].backgroundColor[i],
-                lineWidth: 0,
-                hidden: false,
-                index: i,
-                pointStyle: 'circle',
-                pointStyleWidth: 10,
-              }));
+              const maxLabelLen = Math.max(...data.labels.map(l => l.length));
+              return data.labels.map((label, i) => {
+                const padded = label.padEnd(maxLabelLen, '\u3000');
+                return {
+                  text: padded + '  ' + String(data.datasets[0].data[i]).padStart(3) + '人',
+                  fillStyle: data.datasets[0].backgroundColor[i],
+                  strokeStyle: data.datasets[0].backgroundColor[i],
+                  lineWidth: 0,
+                  hidden: false,
+                  index: i,
+                  pointStyle: 'circle',
+                  pointStyleWidth: 10,
+                };
+              });
             }
           }
         },
@@ -1381,7 +1390,7 @@ async function submitIntervention() {
   const status = document.getElementById('modal-status').value;
   const notes = document.getElementById('modal-notes').value;
   const r = await api(`/admin/interventions/${currentInterventionId}`, {method:'PUT', body:{status,notes}});
-  if(r.code===0) { toast(r.msg); closeModal(); loadInterventions(); }
+  if(r.code===0) { toast(r.msg); closeModal(); loadInterventions(); if(isAdmin) { loadDashboard(); loadStats(); } }
   else toast(r.msg,'error');
 }
 
@@ -1561,7 +1570,7 @@ async function startRiskCalc() {
   
   if(r.code === 0) {
     const d = r.data;
-    const colors = {safe:'#10b981', watch:'#f59e0b', warning:'#f97316', crisis:'#ef4444'};
+    const colors = {safe:'#10b981', watch:'#3b82f6', warning:'#f97316', crisis:'#ef4444'};
     const levels = {safe:'安全', watch:'观察', warning:'警示', crisis:'危机'};
     
     document.getElementById('calc-result').innerHTML = `
@@ -1576,6 +1585,7 @@ async function startRiskCalc() {
       </div>
     `;
     toast('风险计算完成！');
+    if(isAdmin) { loadDashboard(); loadStats(); }
   } else {
     toast(r.msg, 'error');
   }
@@ -2010,6 +2020,7 @@ async function demoTriggerNormal() {
         </p>
       </div>`;
     toast('触发器演示成功！');
+    if(isAdmin) { loadDashboard(); loadStats(); }
   } else {
     box.innerHTML = `<div class="demo-result-box error"><div class="result-title">[FAIL] 操作失败</div><p>${r.msg}</p></div>`;
     toast(r.msg, 'error');
@@ -2067,17 +2078,18 @@ async function demoProcedureNormal() {
         <div class="result-title">[OK] 存储过程执行成功！</div>
         <p style="font-size:12px;color:var(--text3);margin-bottom:8px">计算公式：<code>加权平均分 x 0.6 + 历史最高分 x 0.4</code></p>`;
 
+    const lvColor = (lv) => `var(--${lv==='safe'?'safe':lv==='watch'?'watch':lv==='warning'?'warning':'crisis'})`;
     if(before && after) {
       html += `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
           <div style="background:var(--bg2);padding:12px;border-radius:8px;text-align:center">
             <div style="font-size:11px;color:var(--text3)">更新前</div>
-            <div style="font-size:18px;font-weight:700;color:${before.risk_level==='crisis'?'var(--crisis)':before.risk_level==='warning'?'var(--warning)':'var(--safe)'}">${Number(before.risk_score||0).toFixed(1)}</div>
+            <div style="font-size:18px;font-weight:700;color:${lvColor(before.risk_level)}">${Number(before.risk_score||0).toFixed(1)}</div>
             <div style="font-size:13px">${levels[before.risk_level]||before.risk_level}</div>
           </div>
           <div style="background:var(--bg2);padding:12px;border-radius:8px;text-align:center">
             <div style="font-size:11px;color:var(--text3)">更新后</div>
-            <div style="font-size:18px;font-weight:700;color:${after.risk_level==='crisis'?'var(--crisis)':after.risk_level==='warning'?'var(--warning)':'var(--safe)'}">${Number(after.risk_score||0).toFixed(1)}</div>
+            <div style="font-size:18px;font-weight:700;color:${lvColor(after.risk_level)}">${Number(after.risk_score||0).toFixed(1)}</div>
             <div style="font-size:13px">${levels[after.risk_level]||after.risk_level}</div>
           </div>
         </div>`;
@@ -2089,6 +2101,7 @@ async function demoProcedureNormal() {
       </div>`;
     box.innerHTML = html;
     toast('存储过程执行成功！');
+    if(isAdmin) { loadDashboard(); loadStats(); }
   } else {
     box.innerHTML = `<div class="demo-result-box error"><div class="result-title">[FAIL] 执行失败</div><p>${r.msg}</p></div>`;
     toast(r.msg, 'error');
