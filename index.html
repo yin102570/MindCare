@@ -633,10 +633,14 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
           </div>
           <div class="card">
             <div class="card-title">[失败] 违背约束演示</div>
-            <p style="color:var(--text2);font-size:13px;margin-bottom:12px">测试数据库约束/触发器是否正确拦截非法数据</p>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_level')">非法 level 值 ('critical')</button>
-              <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation('invalid_user')">不存在 user_id (9999)</button>
+            <p style="color:var(--text2);font-size:13px;margin-bottom:12px">自由输入合法/非法数据，测试数据库约束和触发器是否正确拦截</p>
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:flex-end">
+              <select id="demo-trigger-violation-type" class="filter" style="padding:8px;min-width:140px" onchange="switchViolationInput('trigger')">
+                <option value="invalid_level" data-placeholder="如 critical, danger">非法 level 值</option>
+                <option value="invalid_user" data-placeholder="如 9999, -1">不存在 user_id</option>
+              </select>
+              <input id="demo-trigger-violation-value" class="filter" style="flex:1;min-width:120px;padding:8px" placeholder="如 critical, danger">
+              <button class="btn btn-amber btn-sm" onclick="demoTriggerViolation()">提交测试</button>
             </div>
             <div id="demo-trigger-violation-result" style="margin-top:12px;font-size:13px;color:var(--text2)"></div>
           </div>
@@ -661,11 +665,15 @@ select.filter{background:var(--card);border:1px solid var(--border);border-radiu
           </div>
           <div class="card">
             <div class="card-title">[失败] 违背约束演示</div>
-            <p style="color:var(--text2);font-size:13px;margin-bottom:12px">测试存储过程参数校验是否正确拦截</p>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              <button class="btn btn-amber btn-sm" onclick="demoProcViolation('user_not_found')">不存在用户 (user_id=9999)</button>
-              <button class="btn btn-amber btn-sm" onclick="demoProcViolation('invalid_status')">非法状态值 ('deleted')</button>
-              <button class="btn btn-amber btn-sm" onclick="demoProcViolation('intervention_not_found')">不存在干预任务 (id=99999)</button>
+            <p style="color:var(--text2);font-size:13px;margin-bottom:12px">自由输入合法/非法参数，测试存储过程参数校验是否正确拦截</p>
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:flex-end">
+              <select id="demo-proc-violation-type" class="filter" style="padding:8px;min-width:160px" onchange="switchViolationInput('proc')">
+                <option value="user_not_found" data-placeholder="如 9999, 0">不存在用户 (user_id)</option>
+                <option value="invalid_status" data-placeholder="如 deleted, archived">非法干预状态</option>
+                <option value="intervention_not_found" data-placeholder="如 99999">不存在干预任务 (id)</option>
+              </select>
+              <input id="demo-proc-violation-value" class="filter" style="flex:1;min-width:120px;padding:8px" placeholder="如 9999">
+              <button class="btn btn-amber btn-sm" onclick="demoProcViolation()">提交测试</button>
             </div>
             <div id="demo-proc-violation-result" style="margin-top:12px;font-size:13px;color:var(--text2)"></div>
           </div>
@@ -2027,15 +2035,27 @@ async function demoTriggerNormal() {
   }
 }
 
-async function demoTriggerViolation(testType) {
-  const box = document.getElementById('demo-trigger-violation-result');
-  const names = {
-    invalid_level: '插入非法 level 值 ("critical")',
-    invalid_user: '插入不存在的 user_id (9999)'
-  };
-  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">${names[testType]}</p></div>`;
+// 切换违背约束测试类型时更新输入框 placeholder
+function switchViolationInput(prefix) {
+  const sel = document.getElementById(`demo-${prefix}-violation-type`);
+  const inp = document.getElementById(`demo-${prefix}-violation-value`);
+  const opt = sel.options[sel.selectedIndex];
+  inp.placeholder = opt.getAttribute('data-placeholder') || '输入测试值...';
+}
 
-  const r = await api('/demo/trigger-violation', {method:'POST', body:{test_type: testType}});
+async function demoTriggerViolation() {
+  const testType = document.getElementById('demo-trigger-violation-type').value;
+  const customVal = document.getElementById('demo-trigger-violation-value').value.trim();
+  if(!customVal) { toast('请输入测试值', 'warn'); return; }
+
+  const box = document.getElementById('demo-trigger-violation-result');
+  const descMap = {
+    invalid_level: `level='${customVal}'`,
+    invalid_user: `user_id=${customVal}`
+  };
+  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">插入 ${descMap[testType] || customVal}</p></div>`;
+
+  const r = await api('/demo/trigger-violation', {method:'POST', body:{test_type: testType, custom_value: customVal}});
 
   if(r.code !== 0) {
     box.innerHTML = `
@@ -2043,7 +2063,7 @@ async function demoTriggerViolation(testType) {
         <div class="result-title">[OK] 数据库约束/触发器生效！操作被拦截</div>
         <p>${r.msg}</p>
         <p style="color:var(--text3);font-size:12px;margin-top:8px">
-          测试：<code>${names[testType]}</code><br>
+          测试：<code>${descMap[testType] || customVal}</code><br>
           数据库 CHECK 约束、外键约束或触发器成功拦截了非法数据，防止脏数据入库。
         </p>
       </div>`;
@@ -2051,9 +2071,9 @@ async function demoTriggerViolation(testType) {
   } else {
     box.innerHTML = `
       <div class="demo-result-box success">
-        <div class="result-title">操作意外成功</div>
+        <div class="result-title">[意外] 操作未被拦截</div>
         <p>${r.msg}</p>
-        <p style="color:var(--amber);font-size:12px">可能约束尚未配置，请检查数据库</p>
+        <p style="color:var(--amber);font-size:12px">输入值 <code>${r.data?.accepted_value || customVal}</code> 可能是合法数据，或约束尚未配置，请检查数据库</p>
       </div>`;
   }
 }
@@ -2108,16 +2128,20 @@ async function demoProcedureNormal() {
   }
 }
 
-async function demoProcViolation(testType) {
-  const box = document.getElementById('demo-proc-violation-result');
-  const names = {
-    user_not_found: '传入不存在用户 (user_id=9999)',
-    invalid_status: '传入非法状态值 ("deleted")',
-    intervention_not_found: '更新不存在干预任务 (id=99999)'
-  };
-  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">${names[testType]}</p></div>`;
+async function demoProcViolation() {
+  const testType = document.getElementById('demo-proc-violation-type').value;
+  const customVal = document.getElementById('demo-proc-violation-value').value.trim();
+  if(!customVal) { toast('请输入测试值', 'warn'); return; }
 
-  const r = await api('/demo/procedure-violation', {method:'POST', body:{test_type: testType}});
+  const box = document.getElementById('demo-proc-violation-result');
+  const descMap = {
+    user_not_found: `user_id=${customVal}`,
+    invalid_status: `status='${customVal}'`,
+    intervention_not_found: `intervention_id=${customVal}`
+  };
+  box.innerHTML = `<div class="demo-result-box"><div class="result-title">测试中...</div><p style="color:var(--text2)">${descMap[testType] || customVal}</p></div>`;
+
+  const r = await api('/demo/procedure-violation', {method:'POST', body:{test_type: testType, custom_value: customVal}});
 
   if(r.code !== 0) {
     box.innerHTML = `
@@ -2125,6 +2149,7 @@ async function demoProcViolation(testType) {
         <div class="result-title">[OK] 存储过程参数校验生效！</div>
         <p>${r.msg}</p>
         <p style="color:var(--text3);font-size:12px;margin-top:8px">
+          测试：<code>${descMap[testType] || customVal}</code><br>
           存储过程内部参数校验成功拦截了非法参数，返回错误信息而非执行异常操作。
         </p>
       </div>`;
@@ -2132,8 +2157,9 @@ async function demoProcViolation(testType) {
   } else {
     box.innerHTML = `
       <div class="demo-result-box success">
-        <div class="result-title">操作意外成功</div>
+        <div class="result-title">[意外] 操作未被拦截</div>
         <p>${JSON.stringify(r.data)}</p>
+        <p style="color:var(--amber);font-size:12px">参数 <code>${customVal}</code> 可能是合法值，或校验未覆盖此情况</p>
       </div>`;
   }
 }

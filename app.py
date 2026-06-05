@@ -278,7 +278,7 @@ def get_questions(scale_id):
         db.close()
 
 # ============================================================
-# 提交评估（此部分为核心写入，触发器会自动触发）
+# 提交评估（核心写入，触发器会自动触发）
 # ============================================================
 @app.route('/api/assessments', methods=['POST'])
 def submit_assessment():
@@ -584,7 +584,7 @@ def dashboard():
             pending_interventions = cur.fetchone()['cnt']
             cur.execute("SELECT COUNT(*) as cnt FROM risk_levels WHERE risk_level IN ('warning','crisis')")
             high_risk_users = cur.fetchone()['cnt']
-            # 最近7天评估趋势（补全缺失日期，确保曲线连续）
+            # 最近7天评估趋势
             cur.execute("""
                 SELECT DATE(assessed_at) as day, COUNT(*) as cnt,
                        SUM(CASE WHEN level IN ('moderate','severe') THEN 1 ELSE 0 END) as risk_cnt
@@ -593,7 +593,7 @@ def dashboard():
                 GROUP BY DATE(assessed_at) ORDER BY day
             """)
             db_trend = cur.fetchall()
-            # 补全7天内缺失的日期（填充0）
+            # 补全7天内缺失的日期（自动填充0）
             trend_map = {row['day'].strftime('%Y-%m-%d') if isinstance(row['day'], date) else str(row['day']): row for row in db_trend}
             trend = []
             for i in range(6, -1, -1):
@@ -778,6 +778,10 @@ def demo_trigger_violation():
     """演示违背触发器/约束：插入非法数据 → 数据库报错"""
     body = request.json
     test_type = body.get('test_type', '')
+    custom_value = body.get('custom_value', '').strip()
+
+    if not custom_value:
+        return error('请提供测试值')
 
     db = get_db()
     try:
@@ -786,23 +790,27 @@ def demo_trigger_violation():
             with db.cursor() as cur:
                 cur.execute(
                     "INSERT INTO assessments (user_id, scale_id, total_score, level) VALUES (%s,%s,%s,%s)",
-                    (1, 1, 10, 'critical')
+                    (1, 1, 10, custom_value)
                 )
                 db.commit()
-            return success(msg='不应执行到这里')
+            return success({'accepted_value': custom_value, 'msg': '非法 level 值被意外接受，请检查数据库 CHECK 约束'})
 
         elif test_type == 'invalid_user':
             # 违背：插入不存在的 user_id
+            try:
+                uid = int(custom_value)
+            except ValueError:
+                return error(f'无效的 user_id 格式: {custom_value}。数据库 int 类型拒绝非数字输入。')
             with db.cursor() as cur:
                 cur.execute(
                     "INSERT INTO assessments (user_id, scale_id, total_score, level) VALUES (%s,%s,%s,%s)",
-                    (9999, 1, 10, 'moderate')
+                    (uid, 1, 10, 'moderate')
                 )
                 db.commit()
-            return success(msg='不应执行到这里')
+            return success({'accepted_value': uid, 'msg': f'user_id={uid} 被意外接受，请检查外键约束'})
 
         else:
-            return error('请选择测试类型')
+            return error(f'未知测试类型: {test_type}')
 
     except Exception as e:
         db.rollback()
@@ -870,50 +878,62 @@ def demo_procedure_violation():
     """演示存储过程违背约束：传入非法参数 → 存储过程返回错误"""
     body = request.json
     test_type = body.get('test_type', '')
+    custom_value = body.get('custom_value', '').strip()
+
+    if not custom_value:
+        return error('请提供测试值')
 
     db = get_db()
     try:
         if test_type == 'user_not_found':
             # 违背：传入不存在的用户ID
+            try:
+                uid = int(custom_value)
+            except ValueError:
+                return error(f'无效的 user_id 格式: {custom_value}。请输入整数。')
             with db.cursor() as cur:
                 cur.execute("SET @p_result = ''")
-                cur.execute("CALL sp_calc_risk_score_v2(9999, @p_result)")
+                cur.execute("CALL sp_calc_risk_score_v2(%s, @p_result)", (uid,))
                 cur.execute("SELECT @p_result as result_out")
                 result = cur.fetchone()
                 db.commit()
             result_str = list(result.values())[0] if result else ''
             if 'ERROR' in str(result_str).upper():
                 return error(f'存储过程参数校验生效: {result_str}')
-            return success({'result': result_str})
+            return success({'result': result_str, 'msg': f'user_id={uid} 被意外接受，存储过程未拦截'})
 
         elif test_type == 'invalid_status':
             # 违背：传入非法状态值
             with db.cursor() as cur:
                 cur.execute("SET @p_result = ''")
-                cur.execute("CALL sp_update_intervention(1, 'deleted', '测试非法状态', @p_result)")
+                cur.execute("CALL sp_update_intervention(1, %s, %s, @p_result)", (custom_value, f'测试非法状态 {custom_value}'))
                 cur.execute("SELECT @p_result as result_out")
                 result = cur.fetchone()
                 db.commit()
             result_str = list(result.values())[0] if result else ''
             if 'ERROR' in str(result_str).upper():
                 return error(f'存储过程参数校验生效: {result_str}')
-            return success({'result': result_str})
+            return success({'result': result_str, 'msg': f'状态值 "{custom_value}" 被意外接受，存储过程未拦截'})
 
         elif test_type == 'intervention_not_found':
             # 违背：更新不存在的干预任务
+            try:
+                iid = int(custom_value)
+            except ValueError:
+                return error(f'无效的 intervention_id 格式: {custom_value}。请输入整数。')
             with db.cursor() as cur:
                 cur.execute("SET @p_result = ''")
-                cur.execute("CALL sp_update_intervention(99999, 'completed', '测试', @p_result)")
+                cur.execute("CALL sp_update_intervention(%s, 'completed', %s, @p_result)", (iid, f'测试不存在干预 {iid}'))
                 cur.execute("SELECT @p_result as result_out")
                 result = cur.fetchone()
                 db.commit()
             result_str = list(result.values())[0] if result else ''
             if 'ERROR' in str(result_str).upper():
                 return error(f'存储过程参数校验生效: {result_str}')
-            return success({'result': result_str})
+            return success({'result': result_str, 'msg': f'intervention_id={iid} 被意外接受，存储过程未拦截'})
 
         else:
-            return error('请选择测试类型')
+            return error(f'未知测试类型: {test_type}')
 
     except Exception as e:
         db.rollback()
@@ -1020,7 +1040,7 @@ def demo_delete_verify():
 
 
 # ============================================================
-# 演示专用：恢复被删除的演示用户（事务回滚的反向演示）
+# 演示part：恢复被删除的演示用户（事务回滚的反向演示）
 # ============================================================
 @app.route('/api/demo/restore-users', methods=['POST'])
 def restore_demo_users():
