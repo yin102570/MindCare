@@ -1,6 +1,6 @@
 -- ============================================================
 -- MindCare 心理健康评估与干预平台 
--- MySQL 8.0 | 数据库工程作业
+-- Base: MySQL 8.0 | 2410665_殷佳仪_数据库工程作业
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS mindcare CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
